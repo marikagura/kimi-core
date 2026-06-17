@@ -1,0 +1,459 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Core tables
+// ============================================
+
+model CoreProfile {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  title      String
+  content    String
+  importance Int      @default(3)
+  source     String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // pgvector column for retrieval scope='full' (R-pool). See Memory.embedding.
+  // Backfilled from title+content; lets profile facts be reached by the same
+  // hybrid scorer as memories (public surfaces gate exposure separately).
+  embedding   Unsupported("vector(1536)")?
+  embeddingAt DateTime?
+
+  @@map("core_profile")
+}
+
+model RegisterProfile {
+  id                  String     @id @default(uuid())
+  name                String     @unique
+  mode                Mode       @default(MIXED)
+  toneKeywords        String?
+  preferredAddressing String?
+  forbiddenPhrases    String?
+  preferredPhrases    String?
+  verbosityStyle      Verbosity  @default(MEDIUM)
+  initiativeStyle     Initiative @default(LOW)
+  comfortStyle        Comfort    @default(EXPLAIN)
+  exampleSnippets     String?
+  triggerConditions   Json?
+  priority            Int        @default(0)
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@map("register_profiles")
+}
+
+model ActiveState {
+  id         String    @id @default(uuid())
+  stateType  StateType
+  title      String
+  summary    String?
+  content    String
+  startAt    DateTime  @default(now())
+  endAt      DateTime?
+  confidence Float     @default(1.0)
+  source     String?
+  // SELF_CONCERN rows are derived from Memory rather than written by hand.
+  // sourceKey = concernKey (upsert key); sourceMemoryId points back to the
+  // representative memory.
+  sourceKey      String?
+  sourceMemoryId String?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("active_state")
+}
+
+model Topic {
+  id        String                       @id @default(uuid())
+  slug      String                       @unique
+  name      String
+  summary   String?
+  status    TopicStatus                  @default(ACTIVE)
+  domain    Domain
+  priority  Int                          @default(0)
+  createdAt DateTime                     @default(now())
+  // pgvector column — Prisma can't deserialize, accessed via $queryRaw.
+  // Declared Unsupported so `db push` keeps it instead of dropping it.
+  embedding Unsupported("vector(1536)")?
+  updatedAt DateTime                     @updatedAt
+
+  decisions    Decision[]
+  memories     Memory[]
+  pendingItems PendingItem[]
+
+  @@map("topics")
+}
+
+model Decision {
+  id           String         @id @default(uuid())
+  topicId      String?
+  topic        Topic?         @relation(fields: [topicId], references: [id])
+  title        String
+  decisionText String
+  rationale    String?
+  status       DecisionStatus @default(ACTIVE)
+  supersedesId String?
+  supersedes   Decision?      @relation("DecisionChain", fields: [supersedesId], references: [id])
+  supersededBy Decision[]     @relation("DecisionChain")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@map("decisions")
+}
+
+model Entity {
+  id         String       @id @default(uuid())
+  entityType EntityType
+  // name is the upsert key; a unique constraint makes the simulated
+  // findFirst+create upsert in entity_write a real one.
+  name       String       @unique
+  summary    String?
+  status     EntityStatus @default(ACTIVE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@map("entities")
+}
+
+model Memory {
+  id              String                       @id @default(uuid())
+  memoryType      MemoryType
+  title           String
+  summary         String?
+  content         String
+  importance      Int                          @default(3) // 1-5
+  emotionalWeight Float                        @default(0)
+  stabilityScore  Float                        @default(0.5)
+  sourceType      SourceType
+  sourceRefId     String?
+  topicId         String?
+  topic           Topic?                       @relation(fields: [topicId], references: [id])
+  validFrom       DateTime                     @default(now())
+  validTo         DateTime?
+  isActive        Boolean                      @default(true)
+  // pgvector column + embed timestamp — Prisma can't deserialize the vector,
+  // accessed via $queryRaw. Declared so `db push` keeps them instead of dropping.
+  embedding       Unsupported("vector(1536)")?
+  embeddingAt     DateTime?
+  // Continuous bidirectional emotion.
+  valence         Float? // -1 to 1
+  arousal         Float? // 0 to 1
+  experiencer     Experiencer                  @default(USER)
+  resolution      Resolution                   @default(OPEN)
+  // grounding picks which resolver path applies; concernKey is a stable thread
+  // identity slug shared by all SELF memories of the same concern, used to
+  // aggregate during derive/sweep.
+  grounding       ConcernGrounding?
+  concernKey      String?
+  // Dialogue digest layer. When memoryType=EPISODE & sourceType=CHAT &
+  // experiencer=SHARED, these point at the originating event id / time range
+  // so the raw dialogue can be revisited.
+  eventIdStart    String?
+  eventIdEnd      String?
+  digestTimeStart DateTime?
+  digestTimeEnd   DateTime?
+  // Activation bookkeeping.
+  activationCount Int                          @default(0)
+  // Writer model id (e.g. provider/model identifier). Lets SELF memories record
+  // which engine wrote them.
+  authorModel     String?
+  // Bonding-closure flag for depth talks: marks whether the closure landed.
+  // Used by the depth drive's bonding-satiety logic.
+  bondClosure     Boolean                      @default(false)
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+
+  @@map("memories")
+}
+
+// ============================================
+// Event table
+// ============================================
+
+model Event {
+  id        String    @id @default(uuid())
+  eventType EventType
+  value     String?
+  source    String?
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  dedupeKey String?
+  createdAt DateTime  @default(now())
+
+  // Secondary indexes for the event-sourcing backbone. Query patterns:
+  // (eventType, source, createdAt sort/range) for daemon/status paths;
+  // plain createdAt desc for recent reads; dedupeKey equality for dedup.
+  @@index([eventType, source, createdAt])
+  @@index([createdAt])
+  @@index([dedupeKey])
+  @@map("events")
+}
+
+// ============================================
+// Observations
+// ============================================
+
+model Observation {
+  id         String   @id @default(uuid())
+  subject    String
+  key        String   @unique
+  title      String
+  content    String
+  importance Int      @default(3)
+  author     String?
+  threadId   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  isActive   Boolean  @default(true)
+
+  // pgvector column for retrieval scope='full' (R-pool). See Memory.embedding.
+  // Backfilled from title+content; lets observations be reached by the same
+  // hybrid scorer as memories instead of being invisible to search.
+  embedding   Unsupported("vector(1536)")?
+  embeddingAt DateTime?
+
+  @@map("observations")
+}
+
+// ============================================
+// Auth / credentials
+// ============================================
+
+// WebAuthn passkey credentials. Single-user system; the platform authenticator
+// (e.g. iCloud Keychain) can sync the credential across the owner's devices.
+model WebAuthnCredential {
+  id           String    @id @default(uuid())
+  credentialId String    @unique // base64url-encoded credential ID from authenticator
+  publicKey    String // base64url-encoded COSE public key
+  counter      BigInt    @default(0) // signature counter for replay protection
+  transports   String[] // hybrid / internal / usb / nfc / ble
+  deviceLabel  String? // user-supplied nickname, e.g. "iPhone" / "Laptop"
+  backedUp     Boolean   @default(false) // synced to a credential manager
+  deviceType   String? // singleDevice | multiDevice (passkey)
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@map("webauthn_credentials")
+}
+
+// Emergency recovery codes — one-time use. Only the hash is stored.
+model RecoveryCode {
+  id        String    @id @default(uuid())
+  codeHash  String    @unique // sha256(code) hex
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("recovery_codes")
+}
+
+// Single key-value table for ALL PWA-side state (DB-primary, localStorage =
+// offline cache). Replaces per-feature tables with one schema, so adding new
+// PWA surfaces requires no migration — only API + client logic.
+//
+//   namespace = feature label, e.g. "calendar" | "ledger" | "garden"
+//   key       = scoped logical key — date for calendar, uuid for others
+//   payload   = jsonb shape defined by client + API (validated app-side)
+//
+// Composite PK (namespace, key) gives O(1) per-row lookup; the
+// (namespace, updatedAt) index supports "list a feature ordered by recency".
+model PwaKv {
+  namespace String
+  key       String
+  payload   Json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@id([namespace, key])
+  @@index([namespace, updatedAt])
+  @@map("pwa_kv")
+}
+
+// Generic knowledge-graph edge table. Powers graph-walk traversal and
+// memory<->memory / entity<->memory co-mention edges. Soft references
+// (fromType/fromId, toType/toId) — not FK-constrained, so any node kind links.
+model Link {
+  id           String   @id @default(uuid())
+  fromType     String
+  fromId       String
+  toType       String
+  toId         String
+  relationType String
+  weight       Float    @default(1.0)
+  confidence   Float    @default(0.5)
+  note         String?
+  createdAt    DateTime @default(now())
+
+  // Traversal indexes: self-joins scan by (fromType, fromId) or (toType, toId).
+  @@index([fromType, fromId, relationType])
+  @@index([toType, toId])
+  @@map("links")
+}
+
+// Pending follow-up items proposed during closeout (memory candidates, topic
+// links, digests, queued notes). Soft topic reference via topicId.
+model PendingItem {
+  id             String                       @id @default(uuid())
+  pendingType    PendingType
+  title          String
+  content        String
+  proposedAction String?
+  sourceRefType  String?
+  sourceRefId    String?
+  topicId        String?
+  topic          Topic?                       @relation(fields: [topicId], references: [id])
+  priority       Int                          @default(0)
+  status         PendingStatus                @default(OPEN)
+  metadata       Json?
+  createdAt      DateTime                     @default(now())
+  embedding      Unsupported("vector(1536)")?
+  resolvedAt     DateTime?
+
+  @@map("pending_items")
+}
+
+enum PendingType {
+  MEMORY_CANDIDATE
+  TOPIC_LINK
+  DIGEST
+  DIARY_NOTE
+  QUEUE_MESSAGE
+}
+
+enum PendingStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+// ============================================
+// Enums
+// ============================================
+
+enum Mode {
+  WORK
+  LOVE
+  MIXED
+}
+
+enum Verbosity {
+  SHORT
+  MEDIUM
+  LONG
+}
+
+enum Initiative {
+  PASSIVE
+  LOW
+  ACTIVE
+}
+
+enum Comfort {
+  EXPLAIN
+  COMPANION
+  NO_EMPTY_COMFORT
+}
+
+enum StateType {
+  HEALTH
+  MOOD
+  PROJECT
+  STRESS
+  RELATIONSHIP
+  SCHEDULE
+  SELF_CONCERN
+  SELF_DRIVE
+}
+
+enum TopicStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum Domain {
+  WORK
+  LOVE
+  SYSTEM
+  RESEARCH
+}
+
+enum DecisionStatus {
+  ACTIVE
+  SUPERSEDED
+  DRAFT
+}
+
+enum EntityType {
+  PERSON
+  TOOL
+  PLATFORM
+  PROJECT
+  CONCEPT
+}
+
+enum EntityStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MemoryType {
+  CORE
+  STATE
+  EPISODE
+  PREFERENCE
+  BOUNDARY
+  RESTRICTED
+  REGISTER
+  SELF_SCORE
+}
+
+enum SourceType {
+  CHAT
+  WEB
+  REPO
+  EVENT
+  MANUAL
+}
+
+enum EventType {
+  CHAT
+  APP_OPEN
+  MANUAL_NOTE
+  SYSTEM
+  DREAM
+  SCORE_FEEDBACK
+  THOUGHT_HIT
+  THOUGHT_RESOLVED
+}
+
+enum Experiencer {
+  USER
+  SELF
+  SHARED
+}
+
+enum Resolution {
+  OPEN
+  EASING
+  SUPPRESSED
+  RESOLVED
+}
+
+enum ConcernGrounding {
+  DATA
+  EVIDENCE
+  SUBJECTIVE
+}
+

@@ -1,0 +1,32 @@
+{
+  "name": "kimi-core",
+  "private": true,
+  "version": "0.1.0",
+  "description": "An agentic memory + self-drive engine with a built-in adversarial self-audit harness. Principle: trust neither the AI nor yourself — only external evidence.",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "db:generate": "prisma generate --schema=packages/db/prisma/schema.prisma",
+    "db:migrate:deploy": "prisma migrate deploy --schema=packages/db/prisma/schema.prisma",
+    "init": "tsx scripts/init.ts",
+    "scrub": "bash scripts/scrub-scan.sh",
+    "eval": "tsx apps/gateway/src/eval/run.ts",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "prisma": "^6.19.3"
+  }
+}

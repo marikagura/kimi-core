@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+*.log
+.DS_Store
+
+# ── secrets — 永不进仓 ──────────────────────────────
+.env
+.env.*
+!.env.example
+credentials.json
+*.bak
+
+# ── 私词表 — scanner 读它,但它本身绝不进仓 ───────────
+# (否则重蹈 "denylist 文件本身即泄密源" 的覆辙)
+.scrub-secrets.local
+
+# ── 用户自填的私人配置(onboarding 生成)— 不进仓 ──────
+# 仓里只保留 *.example 模板;真实 persona/config 是每个用户自己的。
+# AGENTS.md 是用户自己长出来的 persona/principles 文档,同样不进仓。
+config.yaml
+persona.md
+AGENTS.md
+!config.example.yaml
+!persona.example.md

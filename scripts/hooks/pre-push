@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Pre-push gate: block the push if the de-identification scanner finds private residue.
+# Enable once after clone:  git config core.hooksPath scripts/hooks
+exec bash "$(git rev-parse --show-toplevel)/scripts/scrub-scan.sh"

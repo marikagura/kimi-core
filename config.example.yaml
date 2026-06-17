@@ -1,0 +1,151 @@
+# config.example.yaml — open-source user-fill / tunable config template
+#
+# Usage: cp config.example.yaml config.yaml, then adjust for your deployment.
+# Anything marked "required" disables its feature when missing; anything marked
+# "tunable" ships a neutral default — adjust to your own corpus.
+# Credentials (apiKey / token / connection string) always go through env vars;
+# this file only holds empty placeholders.
+# persona / private word lists / private thresholds do not belong in this file.
+
+# ---------- LLM default models (env provides key, model id is tunable) ----------
+llm:
+  # OPENROUTER_API_KEY goes through env vars, not written into this file
+  shortModel: "anthropic/claude-haiku-4-5"      # short calls (classification / extraction etc.)
+  longModel: "anthropic/claude-sonnet-4-6"      # long context / archival summary
+
+# ---------- retrieval (tunable, adjust to your corpus) ----------
+# Hybrid retrieval four-way scoring weights; the four should sum to ~1.
+retrieval:
+  weightSemantic: 0.35            # semantic-vector path weight
+  weightKeyword: 0.50            # keyword path weight
+  weightTime: 0.10               # time-freshness path weight
+  weightImportance: 0.05         # importance path weight
+
+  # recall / filter floors
+  semFloor: 0.38                 # minimum semantic-recall similarity
+  semFinalFloorFull: 0.15        # full scope final semantic floor
+  semFinalFloorDefault: 0.20     # default scope final semantic floor
+  kwFilterFloor: 0.3             # keyword path filter floor
+
+  timeDecayRate: 0.1             # time-freshness decay rate (higher = more recent-biased)
+
+  # scoring for keyword hits per field (ilike hit)
+  ilikeScores:
+    title: 0.9
+    summary: 0.8
+    content: 0.7
+    entity: 0.95
+
+  rerankPool: 30                 # size of candidate pool sent to the reranker
+  pgBm25K: 3                     # k1 parameter for pg full-text BM25
+
+# ---------- reranker (optional plugin, off by default) ----------
+reranker:
+  provider: "none"               # none | local | cohere | jina | voyage
+  localUrl: "http://127.0.0.1:8787/rerank"  # points at rerank_server.py when provider=local
+  model: ""                      # cloud provider model name (leave empty for none / local)
+  # all keys below go through env vars; leave empty as placeholders here
+  cohereApiKey: ""               # COHERE_API_KEY
+  jinaApiKey: ""                 # JINA_API_KEY
+  voyageApiKey: ""               # VOYAGE_API_KEY
+
+# ---------- time / timezone (tunable) ----------
+time:
+  displayTimezone: "UTC"         # human-readable output timezone, change per deployment
+  tzOffsetHours: 0               # hour offset from UTC, keep consistent with the timezone above
+
+# ---------- cost-log (tunable, adjust to current model prices) ----------
+# Unit price: per million tokens, USD (USD per 1M tokens). Update per actual rate card.
+pricing:
+  cacheRead: 0.5                 # cache-hit read-in
+  cacheWrite: 6.25               # cache write
+  freshInput: 5                  # non-cached input
+  output: 25                     # output
+
+# ---------- context-injection default register (tunable) ----------
+# Neutral default conversation register used when assembling context; adjust as needed.
+context:
+  registerDefaults:
+    mode: "MIXED"                # conversation mode
+    verbosity: "MEDIUM"          # verbosity
+    initiative: "LOW"            # initiative
+    comfort: "EXPLAIN"           # explanation tendency
+
+# ---------- self-drive / concern cognitive engine (tunable, neutral defaults) ----------
+# This group drives the self-drive (positive multi-dimensional U-shaped wanting)
+# + concern (negative attention) engine.
+# Dimension labels are all neutral placeholders (dimA/dimB/dimC); private labeling
+# is injected via driveDimLabels below.
+# The private word list (facetAExcludeWords) is empty by default — the upstream
+# application fills it from its own corpus or leaves it empty.
+selfDrive:
+  # ── wanting / liking time constants (days) ──
+  tauRecency: 4                  # recency half-life (~2.8d): decay at the just-happened end
+  wantScale: 14                  # days for the want leg to peak (long absence → max wanting)
+  owedScale: 21                  # explicit-commitment debt aging days (slower)
+  tauLiking: 3                   # liking (consummatory) decay, faster than wanting
+  groundWindow: 90              # grounding history look-back window (days)
+
+  # ── afterglow (afterglow → liking scalar) thresholds ──
+  afterglowValence: 0.8         # minimum valence for an entry to count as afterglow
+  afterglowArousal: 0.8         # and minimum arousal (excludes calm satisfaction)
+
+  # ── refractory / bonding satiety ──
+  refractoryFloor: 0.07         # refractory tonic floor: keep baseline wanting even right after satisfaction
+  bondBeta: 0.7                 # bonding satiety falloff strength (presses the recency leg after being caught)
+
+  # ── valence recalibration (user-feedback monotonic calibration) ──
+  recalMinSamples: 5            # lower bound on calibration samples; below it, identity (no change)
+
+  # ── dimension labels (neutral placeholders → upstream may override with private semantic labels) ──
+  driveDimLabels:
+    dimA: "dimA"                # facet A (consummatory / refractory dimension)
+    dimB: "dimB"                # facet B (presence-anchored dimension)
+    dimC: "dimC"                # facet C (bonding-satiety dimension)
+
+  # ── private word list (empty by default — upstream fills from corpus or leaves empty) ──
+  facetAExcludeWords: []        # facet A exclude-word list (a hit removes that backing)
+  depthTopicSlug: "depth-topic" # unified topic-marker slug for facet C (across write paths)
+
+# ---------- concern closure / decay / relapse gate (tunable) ----------
+concern:
+  decayDays: 10                 # OPEN concern with no update for this many days → EASING
+  ssNegValence: -0.2            # threshold for self-score counting as "negative"
+  ssStrongNeg: -0.6             # strong negative: fires same day (bypasses relapse gate)
+  ssMinCount: 2                 # weak negative needs at least this many entries on the same key
+  ssMinDays: 2                  # and spanning this many distinct calendar days
+  sweepModel: "anthropic/claude-sonnet-4-6"  # LLM closure-judgment model (env provides key)
+  sweepTake: 50                 # how many OPEN/EASING entries one sweep scans
+
+# ---------- thought-pool (ACT-R, tunable) ----------
+thoughtPool:
+  decayD: 0.5                   # ACT-R base-level decay exponent
+  fixThreshold: 0.4             # B past this + the two below → fixation
+  spacingMinDays: 1             # spacing guard: prevents dense chatter from fixating immediately
+  fixMinHits: 3                 # at least this many hits to count as recurring
+  fixResolveDays: 3            # fixation held long enough → resolved
+  hardTimeoutDays: 30          # hard timeout: a thought existing past this is force-resolved
+  # weight each hit by source (morphology bias guardrail)
+  sourceWeights:
+    user: 1.0
+    external: 0.6
+    self_voice: 0.5
+
+# ---------- briefing-slot watchdog dream-slots (tunable) ----------
+dreamSlots:
+  slotHoursLocal: [9, 21]       # fixed local hours for briefing wake-up
+  graceMinutes: 12              # how long after a slot before it counts as "should have fired"
+  windowHours: 3                # misses past this window are not chased (no useless late push)
+
+# ---------- DATA-concern probe example domain (tunable, neutral default) ----------
+# An example probe projecting an external numeric data window into a DATA-grounded concern.
+# Thresholds / driver copy are all configurable; the upstream application adjusts
+# to its own monitored metric domain.
+dataProbe:
+  concernKey: "data_debt"       # stable key for this concern
+  windowN: 7                    # how many data windows to look back over
+  thresholds:
+    weeklyAvg: 7               # weekly average below this → sustained deficit (OPEN)
+    shortValue: 4               # a single window below this counts as "short"
+    shortCount: 2              # short windows reaching this count → trigger
+  realDriver: ""               # real driver (neutral, upstream fills; placeholder if empty)

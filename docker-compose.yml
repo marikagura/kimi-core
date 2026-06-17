@@ -1,0 +1,23 @@
+# 本地 Postgres + pgvector。clone 后 `docker compose up -d` 即得本地库,
+# 数据 100% 留本机。不想用 docker?把 .env 的 DATABASE_URL 指向你自己的
+# Postgres / Supabase 即可 —— 引擎不绑死任何托管平台。
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: kimi
+      POSTGRES_PASSWORD: kimi
+      POSTGRES_DB: kimi
+    ports:
+      - "5432:5432"
+    volumes:
+      - kimi-pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kimi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  kimi-pgdata:

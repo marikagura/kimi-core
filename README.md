@@ -48,7 +48,7 @@ npm run dev
 - **自建 Postgres。** 把 `DATABASE_URL` 指向你自己的服务器。需要 `vector` 扩展;`pgroonga` 可选(中文 BM25 —— 没有则回退 `pg_trgm`)。
 - **托管 Postgres(Supabase / Neon / RDS / …)。** 同一个 `DATABASE_URL`,换成托管的连接串就行。Supabase 内置 `pgvector`;引擎通过 Prisma 走标准 Postgres,不绑任何厂商 SDK。
 
-零依赖的 SQLite "lite" 后端(不用 Docker、不用 server)在 [ROADMAP](./ROADMAP.md) 上 —— 还没做。
+上面三种(含 Supabase)现在都能用。**唯一**还没做的是零依赖的 SQLite "lite" 后端(不用 Docker、不用 server)——它在 [ROADMAP](./ROADMAP.md) 上。
 
 ## 与 AGENTS.md 配对
 

@@ -48,7 +48,7 @@ One `DATABASE_URL`, three ways to run it — same code, no extra backend:
 - **Self-hosted Postgres.** Point `DATABASE_URL` at your own server. Needs the `vector` extension; `pgroonga` is optional (CJK BM25 — falls back to `pg_trgm` without it).
 - **Managed Postgres (Supabase / Neon / RDS / …).** Same `DATABASE_URL`, just the hosted connection string. Supabase ships `pgvector` built in; the engine speaks plain Postgres over Prisma, so no vendor SDK is involved.
 
-A zero-dependency SQLite "lite" backend (no Docker, no server) is on the [ROADMAP](./ROADMAP.en.md) — not shipped yet.
+All three above (Supabase included) work today. The **only** one not yet shipped is a zero-dependency SQLite "lite" backend (no Docker, no server) — it's on the [ROADMAP](./ROADMAP.en.md).
 
 ## Pairs with AGENTS.md
 

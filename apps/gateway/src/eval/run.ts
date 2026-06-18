@@ -210,6 +210,7 @@ export type EvalSummary = {
   ndcgAt10: number;
   byKind: Array<{ kind: string; n: number; hitAt5Pct: number; hitAt10Pct: number; mrr: number; ndcgAt10: number }>;
   failures: Array<{ kind: string; query: string; topTitle: string | null }>;
+  expectNone?: { n: number; passRate: number };
   coverage?: { n: number; meanCoverage: number; fullyCovered: number };
 };
 
@@ -243,6 +244,10 @@ export async function runEval(
   }
 
   const evals: CaseEval[] = [];
+  // Negative controls (expectNone) are tracked separately — folding a passing
+  // control into hit@/MRR conflates "recall" with "control success" and inflates
+  // the headline recall. They get their own pass-rate, out of the recall numbers.
+  const controlEvals: CaseEval[] = [];
   const covEvals: Array<{ case: EvalCase; covered: number; members: number; coverage: number; missing: string[] }> = [];
   for (const c of cases) {
     const hits = await runSearch(c.query, components, scope);
@@ -255,8 +260,11 @@ export async function runEval(
       }
       continue;
     }
+    if (!c.expectKeywords?.length && !c.expectNone) {
+      console.warn(`[eval] case "${c.query}" (kind=${c.kind}) has no expectKeywords / expectNone / expectAll — it scores as a permanent miss; label it.`);
+    }
     const e = evalCase(c, hits);
-    evals.push(e);
+    (c.expectNone ? controlEvals : evals).push(e);
     if (verbose) {
       const rank = e.firstMatchRank === 0 ? "—" : `r${e.firstMatchRank}`;
       console.log(`${e.pass ? "✓" : "✗"} [${c.kind.padEnd(15)}] ${c.query.padEnd(28)} ${rank.padEnd(4)} maxSem=${getLastMaxSem().toFixed(2)} ${e.pass ? "" : `(top: ${hits[0]?.title ?? "—"})`}`);
@@ -290,6 +298,11 @@ export async function runEval(
   const fullyCovered = covEvals.filter((e) => e.coverage >= 1).length;
   const covSuffix = covTotal ? ` cov=${(meanCoverage * 100).toFixed(0)}%` : "";
 
+  // Negative-control pass rate — kept OUT of the hit@/MRR numbers above.
+  const ctrlTotal = controlEvals.length;
+  const ctrlPass = controlEvals.filter((e) => e.pass).length;
+  const ctrlSuffix = ctrlTotal ? ` expectNone=${ctrlPass}/${ctrlTotal}` : "";
+
   if (verbose) {
     console.log("\n## by kind");
     for (const k of byKind) {
@@ -297,6 +310,7 @@ export async function runEval(
     }
     console.log(`\n## overall    n=${total}  hit@5=${pct(h5, total).toFixed(0)}%  hit@10=${pct(h10, total).toFixed(0)}%  MRR=${m.toFixed(3)}  nDCG@10=${ndcg.toFixed(3)}`);
     if (covTotal) console.log(`## coverage   n=${covTotal}  set-recall@10=${(meanCoverage * 100).toFixed(0)}%  fully=${fullyCovered}/${covTotal}`);
+    if (ctrlTotal) console.log(`## control    n=${ctrlTotal}  expectNone pass=${ctrlPass}/${ctrlTotal} (${pct(ctrlPass, ctrlTotal).toFixed(0)}%) — excluded from hit@/MRR`);
   }
 
   if (writeEvent) {
@@ -307,7 +321,7 @@ export async function runEval(
         data: {
           eventType: "SYSTEM",
           source: "retrieval_eval",
-          value: `retrieval_eval n=${total} hit@5=${pct(h5, total).toFixed(0)}% hit@10=${pct(h10, total).toFixed(0)}% MRR=${m.toFixed(3)} nDCG@10=${ndcg.toFixed(3)}${covSuffix}`,
+          value: `retrieval_eval n=${total} hit@5=${pct(h5, total).toFixed(0)}% hit@10=${pct(h10, total).toFixed(0)}% MRR=${m.toFixed(3)} nDCG@10=${ndcg.toFixed(3)}${covSuffix}${ctrlSuffix}`,
         },
       });
     } catch (err) {
@@ -323,6 +337,7 @@ export async function runEval(
     ndcgAt10: ndcg,
     byKind,
     failures,
+    expectNone: ctrlTotal ? { n: ctrlTotal, passRate: pct(ctrlPass, ctrlTotal) } : undefined,
     coverage: covTotal ? { n: covTotal, meanCoverage, fullyCovered } : undefined,
   };
 }

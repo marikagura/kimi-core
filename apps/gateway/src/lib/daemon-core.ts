@@ -43,6 +43,13 @@ const HOOK_SOURCE = process.env.GROUND_HOOK_SOURCE ?? "client_hook";
 const LOOP_SOURCE = process.env.GROUND_LOOP_SOURCE ?? "client_loop";
 const COMMIT_SOURCE = process.env.GROUND_COMMIT_SOURCE ?? "git_commit";
 
+// Recency window (hours) within which the chat surfaces count as the *current*
+// conversation. A wake loop ticks every several hours; once the latest chat
+// message falls outside this window those rows are history, not what the user
+// "just said" — feeding them in undated lets the wake loop quote days-old
+// messages as current. Tunable via env.
+const CHAT_LIVE_WINDOW_H = Number(process.env.GROUND_CHAT_LIVE_WINDOW_H ?? 36);
+
 // ── ground truth: what the user is doing right now (pre-computed for the prompt).
 //    Shared so sibling wake loops stay in sync. The commit window is a fixed
 //    recent-24h span (surface-independent). Everything here is context, not a
@@ -52,7 +59,8 @@ export async function buildGroundTruth(now: Date): Promise<string> {
   const ago = (d: Date) => {
     const m = Math.round((nowMs - d.getTime()) / 60000);
     if (m < 60) return `${m}min ago`;
-    return `${(m / 60).toFixed(1)}h ago`;
+    if (m < 48 * 60) return `${(m / 60).toFixed(1)}h ago`;
+    return `${(m / 1440).toFixed(1)} days ago`;
   };
   const stamp = (d: Date) => localDateTime(d);
   const todayKey = localDate(now);
@@ -68,7 +76,8 @@ export async function buildGroundTruth(now: Date): Promise<string> {
   // True device activity = app-open. Exclude the interactive hook heartbeat and
   // the background loop heartbeat — neither is the user picking up a device.
   const lastApp = await prisma.event.findFirst({ where: { eventType: "APP_OPEN", source: { notIn: [HOOK_SOURCE, LOOP_SOURCE] } }, orderBy: { createdAt: "desc" } });
-  const lastChat = await prisma.event.findFirst({ where: { eventType: "CHAT" }, orderBy: { createdAt: "desc" } });
+  // (last real chat message is derived below from the actual message surfaces,
+  // not a broad eventType:"CHAT" query — see lastChatAt)
   // External calendar namespace (config-driven): maps onto a deployment's own
   // calendar ingestion KV partition. Defaults to a generic placeholder.
   const calNamespace = process.env.CAL_NAMESPACE ?? "calendar-external";
@@ -77,6 +86,12 @@ export async function buildGroundTruth(now: Date): Promise<string> {
   // Pull recent rows from both conversational surfaces (cross-surface awareness).
   const primaryMsgs = await prisma.event.findMany({ where: { eventType: "CHAT", source: CHAT_SOURCE }, orderBy: { createdAt: "desc" }, take: 20 });
   const crossMsgs = await prisma.event.findMany({ where: { eventType: "CHAT", source: CROSS_CHAT_SOURCE }, orderBy: { createdAt: "desc" }, take: 20 });
+  // Last real chat message, from the message surfaces only — NOT a broad
+  // eventType:"CHAT" query (closeout / digest / other non-message events also land
+  // as CHAT and would falsely read as "the user just messaged").
+  const lastPrimaryAt = primaryMsgs[0]?.createdAt ?? null;
+  const lastCrossAt = crossMsgs[0]?.createdAt ?? null;
+  const lastChatAt = [lastPrimaryAt, lastCrossAt].filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   // Recent non-chat EPISODE memories (deeper sessions not captured as CHAT events).
   // Exclude this daemon's own diary entries.
   const recentDeep = await prisma.memory.findMany({
@@ -95,14 +110,14 @@ export async function buildGroundTruth(now: Date): Promise<string> {
   const realActs: { src: string; at: Date }[] = [];
   if (lastApp) realActs.push({ src: "device", at: lastApp.createdAt });
   if (commits[0]) realActs.push({ src: "commit", at: commits[0].createdAt });
-  if (lastChat) realActs.push({ src: "chat", at: lastChat.createdAt });
+  if (lastChatAt) realActs.push({ src: "chat", at: lastChatAt });
   if (lastHook) realActs.push({ src: "client", at: lastHook.createdAt });
   realActs.sort((a, b) => b.at.getTime() - a.at.getTime());
   const lastReal = realActs[0];
   const gapMin = lastReal ? Math.round((nowMs - lastReal.at.getTime()) / 60000) : 9999;
 
   const recentCommit = commits[0] && nowMs - commits[0].createdAt.getTime() < 45 * 60000;
-  const recentChat = lastChat && nowMs - lastChat.createdAt.getTime() < 30 * 60000;
+  const recentChat = lastChatAt && nowMs - lastChatAt.getTime() < 30 * 60000;
   const clientActive = lastHook && nowMs - lastHook.createdAt.getTime() < 30 * 60000;
   let inferred: string;
   if (recentCommit) inferred = "probably coding (just shipped — commit is the first signal)";
@@ -146,15 +161,28 @@ export async function buildGroundTruth(now: Date): Promise<string> {
     catch { text = m.value || ""; }
     // Strip inline timestamp blocks ([... HH:MM]) that get embedded in message text.
     const norm = text.replace(/\[[^\]]*?\d{1,2}[:.]\d{2}[^\]]*?\]/g, "").replace(/\s+/g, " ").trim();
-    return { at: m.createdAt.getTime(), line: `- ${tag} ${who}: ${norm.slice(0, 100)}` };
+    // Pin each line with its own event time. The normalizer above strips any inline
+    // [HH:MM] block from the body, so without this the whole block carries no time
+    // signal and days-old rows read as just-said.
+    return { at: m.createdAt.getTime(), line: `- [${stamp(m.createdAt).slice(5)}] ${tag} ${who}: ${norm.slice(0, 100)}` };
   };
-  const convo = [
-    ...primaryMsgs.map((m) => renderChat(m, "[chat]")),
-    ...crossMsgs.map((m) => renderChat(m, "[chat-b]")),
-  ].sort((a, b) => b.at - a.at);
-  if (convo.length) {
-    L.push(`\n## Recent conversation (${primaryMsgs.length} + ${crossMsgs.length} rows, newest first)`);
+  // Time-flow gate: feed the chat rows in as "current conversation" only when the
+  // latest message is within the live window. If the user has been active only on
+  // another surface for a while, these rows are history — dumping them undated lets
+  // the wake loop quote days-old messages as if just said. Outside the window, emit
+  // one time-flow line instead of the rows.
+  const liveCut = nowMs - CHAT_LIVE_WINDOW_H * 3600_000;
+  const chatIsLive = !!(lastChatAt && lastChatAt.getTime() >= liveCut);
+  if (chatIsLive) {
+    const convo = [
+      ...primaryMsgs.filter((m) => m.createdAt.getTime() >= liveCut).map((m) => renderChat(m, "[chat]")),
+      ...crossMsgs.filter((m) => m.createdAt.getTime() >= liveCut).map((m) => renderChat(m, "[chat-b]")),
+    ].sort((a, b) => b.at - a.at);
+    L.push(`\n## Recent conversation (chat surfaces · within last ${CHAT_LIVE_WINDOW_H}h · newest first)`);
     for (const c of convo) L.push(c.line);
+  } else {
+    L.push(`\n## Chat surfaces · time flow — no chat-surface message in the last ${CHAT_LIVE_WINDOW_H}h`);
+    L.push(`- last ${CHAT_SOURCE} ${lastPrimaryAt ? ago(lastPrimaryAt) : "—"}  ·  last ${CROSS_CHAT_SOURCE} ${lastCrossAt ? ago(lastCrossAt) : "—"}. Treat older chat rows as history, not as just-said.`);
   }
   if (recentDeep.length) {
     L.push(`\n## Recent sessions (last 3 days; trailing timestamp ≈ when written)`);

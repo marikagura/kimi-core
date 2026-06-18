@@ -1023,7 +1023,7 @@ export function registerAllTools(server: McpServer) {
             .join("\n\n---\n\n")
         : "No recent episodes.\n";
 
-      ctx += "\n\n## Recent dialogue digests (sanitized)\n";
+      ctx += "\n\n## Recent dialogue digests (sanitized · past memory, not the current conversation)\n";
       const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       ctx += digests.length
         ? digests.map((d) => {
@@ -1031,7 +1031,12 @@ export function registerAllTools(server: McpServer) {
             const body = isRecent
               ? (d.summary || d.content).slice(0, 300)
               : (d.summary || d.content.slice(0, 100));
-            return `- ${d.title}: ${body}`;
+            // Relative-age label per line — titles are not guaranteed to carry a
+            // date, so without it a cold-start reentry can read a days-old digest
+            // as if it were the current conversation.
+            const ageDays = Math.floor((Date.now() - d.createdAt.getTime()) / 86_400_000);
+            const ageLabel = ageDays <= 0 ? "today" : `${ageDays}d ago`;
+            return `- [${ageLabel}] ${d.title}: ${body}`;
           }).join("\n")
         : "- (none — the digest layer produces these automatically)";
 

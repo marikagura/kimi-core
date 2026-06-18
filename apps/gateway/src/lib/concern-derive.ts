@@ -461,10 +461,13 @@ function firstPromiseDate(text: string, fallback: Date, now: Date = new Date()):
 type DriveDim = { key: string; label: string; fold: DimFold };
 
 // owed = sensitized wanting (Berridge incentive sensitization: the longer
-// unfulfilled, the more wanted). Panksepp plan P2: no longer a standalone drive
-// dim (natural craving already lives in each facet's want leg); instead computes
-// a wanting scalar for the wanting−liking gap — sourced from explicit commitment
-// debt (a RELATIONSHIP state containing a debt/owed marker).
+// unfulfilled, the more wanted) — a wanting scalar sourced from explicit
+// commitment debt (a RELATIONSHIP state containing a debt/owed marker).
+//
+// STATUS: exported as a ready INPUT to the wanting−liking gap, but NO consumer
+// ships in core — the damping signal that reads this scalar (vs the liking scalar
+// below) is application-specific and intentionally not bundled. Here as a worked
+// example + a wired-ready input, not an active feature. Don't trace a consumer.
 export async function computeOwedWanting(now: Date = new Date()): Promise<number> {
   const debtStates = await prisma.activeState.findMany({
     where: { stateType: "RELATIONSHIP", isActive: true },
@@ -477,22 +480,16 @@ export async function computeOwedWanting(now: Date = new Date()): Promise<number
   return Math.min(1, days / OWED_SCALE);
 }
 
-// Unified depth marker across write paths: read the depth topic id. The drive
-// deriver's facet-C backing reads it (any memory mapped to this topic counts),
-// not a word list. The topic is ensured by the write path / backfill.
-export async function getDepthTopicId(): Promise<string | null> {
-  const t = await prisma.topic.findUnique({ where: { slug: DEPTH_TOPIC_SLUG } });
-  return t?.id ?? null;
-}
-
 // Compute each dim's fold + thought boost without writing the DB — shared by the
 // real projection (deriveDrives) and the observer (self-digest view), so the
 // observer sees the same grounding/recency/want breakdown that lands in the DB
 // confidence, to the digit.
 // afterglow = Berridge liking (consummatory hedonic, doesn't drive behavior) →
-// excluded from drive ranking (Panksepp plan P1). Instead computes a liking
-// scalar (recency-weighted intensity of the most recent peak) for the
-// wanting−liking gap.
+// excluded from drive ranking. Computes a liking scalar (recency-weighted
+// intensity of the most recent peak) for the wanting−liking gap.
+//
+// STATUS: same as computeOwedWanting — a ready INPUT to the gap, no core
+// consumer. Exported as a worked example, not a wired feature.
 export async function computeAfterglowLiking(now: Date = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - GROUND_WINDOW * 86400000);
   const afterglow = await prisma.memory.findMany({

@@ -11,11 +11,11 @@
 // its own domain language. Only edit the criterion here.
 import prisma from "../db.js";
 import { callLLMShort } from "./llm.js";
+import { roleModel } from "./models.js";
 
 // Topic slug used to mark depth memories across all write paths. Tunable.
 const DEPTH_TOPIC_SLUG = process.env.DEPTH_TOPIC_SLUG ?? "depth-topic";
-// Model id for the judge (env supplies the key). Tunable.
-const DEPTH_JUDGE_MODEL = process.env.DEPTH_JUDGE_MODEL ?? "anthropic/claude-sonnet-4-6";
+// Judge model: DEPTH_JUDGE_MODEL env, else the shared KIMI_MODEL. No built-in default.
 
 // One-line version — embedded into another prompt (the digest's existing
 // topic-suggestion stanza).
@@ -49,7 +49,7 @@ export async function tagDepthIfNeeded(mem: {
     if (mem.importance < 4) return;                            // only catch important enough ones
     if (!["CORE", "EPISODE"].includes(mem.memoryType)) return; // only the two types depth can land in
     const user = `[${mem.memoryType}] ${mem.title} — ${mem.content.slice(0, 220).replace(/\s+/g, " ")}`;
-    const raw = await callLLMShort(DEPTH_JUDGE_ONE_SYSTEM, user, { model: DEPTH_JUDGE_MODEL, maxTokens: 30 });
+    const raw = await callLLMShort(DEPTH_JUDGE_ONE_SYSTEM, user, { model: roleModel("DEPTH_JUDGE_MODEL"), maxTokens: 30 });
     const isDepth = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? "{}").depth === true;
     if (!isDepth) return;
     const topic = await prisma.topic.upsert({

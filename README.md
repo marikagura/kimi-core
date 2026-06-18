@@ -43,7 +43,8 @@ npm install
 docker compose up -d          # local Postgres + pgvector — or point DATABASE_URL at your own DB
 npm run init                  # conversational onboarding — generates .env (with a fresh KIMI_API_KEY) + persona.md + AGENTS.md
                               # (prefer to do it by hand? cp .env.example .env and fill it instead)
-# now open .env and fill OPENAI_API_KEY + OPENROUTER_API_KEY
+# now open .env: set KIMI_MODEL (your own model — the repo ships none) + OPENROUTER_API_KEY;
+# OPENAI_API_KEY + EMBED_MODEL enable semantic search
 npm run db:migrate:deploy
 npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 ```
@@ -51,6 +52,10 @@ npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 **这个 repo 里不附带任何 persona。** 没有内建的人格，没有示例关系，没有词表。
 你自己带——`npm run init` 会带你一步步把它建起来。引擎刻意空着出厂；
 这份空白正是最强形式的去标识化。
+
+**也不附带任何 model。** kimi-core 没有任何内置模型——LLM 调用设 `KIMI_MODEL`（OpenRouter slug），
+语义检索设 `EMBED_MODEL`，跑 daemon 才需要 `DAEMON_MODEL`（裸 Claude id）。`npm run init` 会问你；
+没设就 fail-closed、报一条清楚的错，而不是悄悄拿一个你没选过的模型去跑。
 
 ## 运行 autonomous daemon（可选）
 

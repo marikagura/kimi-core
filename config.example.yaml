@@ -7,11 +7,16 @@
 # this file only holds empty placeholders.
 # persona / private word lists / private thresholds do not belong in this file.
 
-# ---------- LLM default models (env provides key, model id is tunable) ----------
+# ---------- LLM models (bring your own — the repo ships NO built-in model) ----------
+# Model ids are read from ENV, not this file: KIMI_MODEL (default for all OpenRouter
+# calls) + optional per-role overrides (LLM_SHORT_MODEL, INTEL_MODEL, …). See
+# .env.example. These stay blank — documentation of the knobs, not a place to bake
+# in a model (baking one in is the wrong OSS pattern: it silently runs on a model
+# the deployer never chose).
 llm:
-  # OPENROUTER_API_KEY goes through env vars, not written into this file
-  shortModel: "anthropic/claude-haiku-4-5"      # short calls (classification / extraction etc.)
-  longModel: "anthropic/claude-sonnet-4-6"      # long context / archival summary
+  # OPENROUTER_API_KEY + every model id go through env vars, not this file.
+  shortModel: ""      # → LLM_SHORT_MODEL env (short calls); blank → falls back to KIMI_MODEL
+  longModel: ""       # → long-context calls; blank → falls back to KIMI_MODEL
 
 # ---------- retrieval (tunable, adjust to your corpus) ----------
 # Hybrid retrieval four-way scoring weights; the four should sum to ~1.
@@ -133,7 +138,7 @@ concern:
   ssStrongNeg: -0.6             # strong negative: fires same day (bypasses relapse gate)
   ssMinCount: 2                 # weak negative needs at least this many entries on the same key
   ssMinDays: 2                  # and spanning this many distinct calendar days
-  sweepModel: "anthropic/claude-sonnet-4-6"  # LLM closure-judgment model (env provides key)
+  sweepModel: ""                # → INTEL_SWEEP_MODEL env (closure-judgment); blank → falls back to KIMI_MODEL
   sweepTake: 50                 # how many OPEN/EASING entries one sweep scans
 
 # ---------- thought-pool (ACT-R, tunable) ----------

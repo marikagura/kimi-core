@@ -43,13 +43,16 @@ function say(...lines: string[]): void {
 // key / on any failure, so the keyless path is a plain guided dialogue.
 async function followup(topic: string, answer: string): Promise<string> {
   const key = process.env.OPENROUTER_API_KEY;
-  if (!key || !answer.trim()) return "";
+  // No built-in model: the adaptive follow-up runs only when a model is configured
+  // (ONBOARDING_MODEL, else KIMI_MODEL). Otherwise it's a plain guided dialogue.
+  const model = process.env.ONBOARDING_MODEL?.trim() || process.env.KIMI_MODEL?.trim();
+  if (!key || !model || !answer.trim()) return "";
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: process.env.ONBOARDING_MODEL || "anthropic/claude-sonnet-4-6",
+        model,
         max_tokens: 80,
         messages: [
           { role: "system", content: "You help someone DEFINE their own AI companion's persona by interview. Ask ONE short, warm follow-up question that draws out more of THEIR words about the topic. Never propose persona content yourself. Output only the question, in the user's language." },
@@ -140,6 +143,18 @@ async function main(): Promise<void> {
   const rerank = await ask("\nReranker provider (none / local / cohere / jina / voyage)?", "none");
   const tz = await ask("显示时区 (IANA 名,如 UTC / America/New_York)?", "UTC");
 
+  // ── models (bring your own — the repo ships none) ─────────
+  say(
+    "## 模型",
+    "kimi-core 不内置任何模型 —— 你自己带。",
+    "KIMI_MODEL:OpenRouter slug(如 anthropic/claude-... 或 openai/gpt-...);intel / digest / 短调用都走它,可在 .env 里按角色单独覆盖。",
+    "DAEMON_MODEL:自主 wake daemon 用 Claude Agent SDK,填裸 Claude id(如 claude-...);不跑 daemon 可留空。",
+    "EMBED_MODEL:embedding 模型(如 text-embedding-3-small,1536 维,要和 DB 向量维度一致);留空 = 不开语义检索(退回关键词)。",
+  );
+  const kimiModel = await ask("KIMI_MODEL(OpenRouter slug)?", "");
+  const daemonModel = await ask("DAEMON_MODEL(裸 Claude id,可留空)?", "");
+  const embedModel = await ask("EMBED_MODEL(可留空)?", "");
+
   // ── write persona.md ─────────────────────────────────────
   await writeFile("persona.md", buildPersonaMd(answers));
   console.log("\n✓ 写好 persona.md");
@@ -159,9 +174,12 @@ async function main(): Promise<void> {
     const env = [
       "# 由 `npm run init` 生成",
       'DATABASE_URL="postgresql://kimi:kimi@localhost:5432/kimi?schema=public"',
-      'OPENAI_API_KEY=""        # 必填 —— embedding',
+      'OPENAI_API_KEY=""        # 必填(开语义检索时)—— embedding',
       'OPENROUTER_API_KEY=""    # 必填 —— LLM 调用',
       `KIMI_API_KEY="${genKey()}"   # gateway bearer,自动生成;绝不用默认值`,
+      `KIMI_MODEL="${kimiModel}"        # 必填 —— 默认 LLM 模型(你自带,仓库无内置)`,
+      `DAEMON_MODEL="${daemonModel}"    # daemon 用(裸 Claude id);不跑 daemon 可空`,
+      `EMBED_MODEL="${embedModel}"      # embedding 模型;空 = 无语义检索`,
       `RERANK_PROVIDER="${rerank}"`,
       `KIMI_TZ="${tz}"`,
       "",

@@ -1,17 +1,19 @@
-// OpenAI text-embedding-3-small wrapper. Returns null on any failure so call
-// sites can gracefully fall back to substring search / re-embed later via sweep.
+// OpenAI embeddings wrapper (model via EMBED_MODEL; no built-in default). Returns
+// null on any failure — call sites gracefully fall back to keyword/trigram search.
 //
 // 1536-dim. Input truncated to 8k chars (~2k tok) as a safety cap — longer
 // inputs cost more without proportional quality gain for the memory/digest/
 // profile use case.
 
 import { fetchWithRetry } from "../fetch-retry.js";
+import { embedModelOrNull } from "./models.js";
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 export async function embedText(text: string): Promise<number[] | null> {
-  if (!OPENAI_KEY) {
-    console.warn("[embed] OPENAI_API_KEY not set, skipping");
+  const model = embedModelOrNull();
+  if (!OPENAI_KEY || !model) {
+    console.warn("[embed] OPENAI_API_KEY or EMBED_MODEL not set — skipping (no semantic arm)");
     return null;
   }
   if (!text || text.trim().length === 0) return null;
@@ -24,7 +26,7 @@ export async function embedText(text: string): Promise<number[] | null> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "text-embedding-3-small",
+        model,
         input: text.slice(0, 8000),
       }),
     });

@@ -7,6 +7,7 @@ import { buildPersona } from "@kimi/context-core";
 import { ensureSubscriptionAuth, buildGroundTruth } from "./lib/daemon-core.js";
 import { dispatchAction, ActionType, type AutonomyMode } from "./lib/agency.js";
 import { getNotifier, getSearchProvider } from "./lib/providers.js";
+import { modelFor } from "./lib/models.js";
 
 // ============================================================================
 // wake daemon — a timer-driven, read-only agent loop.
@@ -251,10 +252,10 @@ async function wake(force = false) {
   try {
     const mcpToken = process.env.KIMI_MCP_TOKEN ?? process.env.KIMI_API_KEY ?? "";
     const options: any = {
-      // Model id is config-driven; override via env. Must be a full id (aliases vary).
-      // Model id is config-driven; override via DAEMON_MODEL. Default is a real,
-      // current id — the Claude Agent SDK resolves it against your subscription.
-      model: process.env.DAEMON_MODEL || "claude-sonnet-4-6",
+      // No built-in model — set DAEMON_MODEL to your own Claude model id (a BARE id
+      // like "claude-...", not an OpenRouter slug; the Claude Agent SDK resolves it
+      // against your subscription). Unset → a clear error, never a silent default.
+      model: modelFor("DAEMON_MODEL"),
       systemPrompt: loadDaemonPersona() || "",
       // Streamable-HTTP MCP — MUST match what the gateway exposes (http-server.ts
       // serves POST /mcp). type "http" = the modern Streamable HTTP transport.

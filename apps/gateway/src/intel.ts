@@ -7,13 +7,12 @@ import { embedText, toVectorLiteral } from "./lib/embed.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
+import { roleModel } from "./lib/models.js";
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY!;
-// Model ids are config-driven. Any OpenRouter slug works; override via env.
-const MODEL = process.env.INTEL_MODEL || "anthropic/claude-sonnet-4-6";
-const DIGEST_MODEL = process.env.INTEL_DIGEST_MODEL || "anthropic/claude-sonnet-4-6";
-const SWEEP_MODEL = process.env.INTEL_SWEEP_MODEL || "anthropic/claude-sonnet-4-6";
-const SCORE_AUTHOR_MODEL = process.env.INTEL_SCORE_AUTHOR_MODEL || "anthropic/claude-sonnet-4-6";
+// No built-in model — every model is the deployer's own (KIMI_MODEL, with optional
+// per-role overrides INTEL_MODEL / INTEL_DIGEST_MODEL / INTEL_SWEEP_MODEL /
+// INTEL_SCORE_AUTHOR_MODEL). Resolved at use via roleModel(); unset → clear error.
 
 // Optional OpenRouter provider routing preference. Comma-separated provider names
 // in OPENROUTER_PROVIDER_ORDER pin the routing order; unset → no explicit order,
@@ -42,7 +41,7 @@ async function callLLM(system: string, user: string, maxTokens = 2000, modelOver
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: modelOverride || MODEL,
+      model: modelOverride || roleModel("INTEL_MODEL"),
       // Apply a provider routing preference only for Anthropic models, so passing a
       // non-Anthropic override later does not force a provider on it. Order is taken
       // from OPENROUTER_PROVIDER_ORDER when set; otherwise only allow_fallbacks.
@@ -241,7 +240,7 @@ Skipping sessionScore leaves gaps in the self_score timeline.`;
         arousal: score.arousal,
         importance: 3,
         sourceType: "CHAT",
-        authorModel: SCORE_AUTHOR_MODEL,
+        authorModel: roleModel("INTEL_SCORE_AUTHOR_MODEL"),
       },
     });
     console.log(`[intel] chat session score: v=${score.valence} a=${score.arousal} "${score.note}"`);
@@ -274,7 +273,7 @@ async function scanSelfEmotion(): Promise<{ created: number; updated: number; de
   // output headroom (thinking counts toward total, must be < maxTokens).
   let swept = "skip";
   try {
-    const verdicts = await sweepConcerns((s, u) => callLLM(s, u, 2000, SWEEP_MODEL, 1500));
+    const verdicts = await sweepConcerns((s, u) => callLLM(s, u, 2000, roleModel("INTEL_SWEEP_MODEL"), 1500));
     if (verdicts.length) {
       const appliedN = verdicts.filter((v) => v.applied).length;
       swept = `${verdicts.length} judged [${verdicts.map((v) => `${v.key}:${v.verdict}`).join(", ")}] ${appliedN} applied`;
@@ -426,7 +425,7 @@ Output JSON (JSON only, no markdown fence):
       let attempts = 0;
       for (attempts = 1; attempts <= 2; attempts++) {
         try {
-          raw = await callLLM(systemPrompt, prompt, 1500, DIGEST_MODEL);
+          raw = await callLLM(systemPrompt, prompt, 1500, roleModel("INTEL_DIGEST_MODEL"));
         } catch (err: any) {
           console.warn(`[dialogue_digest] ${dateStr} callLLM attempt ${attempts} threw: ${err?.message ?? err}`);
           raw = "";
@@ -515,7 +514,7 @@ Output JSON (JSON only, no markdown fence):
               valence: scoreV,
               arousal: scoreA,
               sourceType: "CHAT",
-              authorModel: SCORE_AUTHOR_MODEL,
+              authorModel: roleModel("INTEL_SCORE_AUTHOR_MODEL"),
               digestTimeStart: dayEvents[0].createdAt,
               digestTimeEnd: dayEvents[dayEvents.length - 1].createdAt,
             },

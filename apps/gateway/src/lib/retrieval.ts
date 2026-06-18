@@ -141,6 +141,50 @@ export function getLastMaxSem(): number {
   return lastMaxSem;
 }
 
+// ----------------------------------------------------------------------------
+// Pure scoring core — extracted from scoreMemories so the four-arm weighting and
+// the false-positive filter (the gate the whole engine leans on) can be unit-
+// tested WITHOUT a database. scoreMemories maps/filters every row through these;
+// behavior is byte-identical to the previous inline version.
+// ----------------------------------------------------------------------------
+
+// One raw SQL row → weighted `final` + per-signal breakdown. Component toggles
+// (useSem/useKw default ON) zero a signal's contribution so it drops out of
+// `final` and the downstream filter.
+export function scoreRow(m: any, opts: { useSem?: boolean; useKw?: boolean } = {}): ScoredMemory {
+  const useSem = opts.useSem ?? true;
+  const useKw = opts.useKw ?? true;
+  const semRaw = Number(m.sem_sim) || 0;
+  const kwRaw = Number(m.kw_sim) || 0;
+  const sem = useSem ? semRaw : 0;
+  const kw = useKw ? kwRaw : 0;
+  const t = Number(m.time_decay) || 0;
+  const imp = (Number(m.importance) || 3) / 5;
+  const final = sem * W_SEM + kw * W_KW + t * W_TIME + imp * W_IMP;
+  const entities: string[] = m.entity_names ?? [];
+  const scoreBreakdown = {
+    semantic: { raw: sem, weight: W_SEM, contribution: sem * W_SEM },
+    keyword: { raw: kw, weight: W_KW, contribution: kw * W_KW },
+    time: { raw: t, weight: W_TIME, contribution: t * W_TIME },
+    importance: { raw: imp, weight: W_IMP, contribution: imp * W_IMP },
+    entityHit: !!m.via_entity,
+    entities,
+    final,
+  };
+  return { ...m, sem, kw, t, final, entities, scoreBreakdown };
+}
+
+// Survivor filter: keep a hit iff it has a real kw signal (>= KW floor) OR an
+// entity edge OR a pure-semantic hit clearing BOTH the final gate and the raw-
+// cosine floor. This blocks the false positives cosine alone would return in a
+// 1536-d space. Strong kw / entity bypass the sem cap.
+export function passesFilter(
+  m: { kw: number; via_entity?: boolean; final: number; sem: number },
+  semFinalFloor: number = SEM_FINAL_FLOOR_DEFAULT,
+): boolean {
+  return m.kw >= KW_FILTER_FLOOR || !!m.via_entity || (m.final >= semFinalFloor && m.sem >= SEM_FLOOR);
+}
+
 export async function scoreMemories(
   query: string,
   opts: ScoreOpts = {},
@@ -332,42 +376,14 @@ export async function scoreMemories(
   // `.slice(0, limit)` is deferred below so the rerank branch can take a wider
   // candidate pool from the same sorted array. Splitting a (mutating) `.sort()`
   // from a (pure) `.slice()` is behavior-identical.
+  // Score every row (pure scoreRow) → keep survivors (pure passesFilter) →
+  // sort by `final` high→low. .slice(0, limit) is deferred so the rerank branch
+  // can take a wider pool from the same sorted array.
+  // NOTE: rerank deliberately does NOT touch passesFilter — it runs on raw
+  // cosine/kw/entity signals (a different scale), so it only RE-ORDERS survivors.
   const sortedSurvivors = rows
-    .map((m: any) => {
-      const semRaw = Number(m.sem_sim) || 0;
-      const kwRaw = Number(m.kw_sim) || 0;
-      // Component toggles: when sem/kw is off, zero its contribution so it drops
-      // out of `final` (and the downstream filter that reads m.sem/m.kw). With
-      // both ON — the default — sem===semRaw and kw===kwRaw.
-      const sem = useSem ? semRaw : 0;
-      const kw = useKw ? kwRaw : 0;
-      const t = Number(m.time_decay) || 0;
-      const imp = (Number(m.importance) || 3) / 5;
-      const final = sem * W_SEM + kw * W_KW + t * W_TIME + imp * W_IMP;
-      // Recall explainability: surface *why* each memory came back — each
-      // weighted component's contribution + which entity edge (if any) it hit.
-      // Pure transparency; does not touch scoring/filter/sort below.
-      const entities: string[] = m.entity_names ?? [];
-      const scoreBreakdown = {
-        semantic: { raw: sem, weight: W_SEM, contribution: sem * W_SEM },
-        keyword: { raw: kw, weight: W_KW, contribution: kw * W_KW },
-        time: { raw: t, weight: W_TIME, contribution: t * W_TIME },
-        importance: { raw: imp, weight: W_IMP, contribution: imp * W_IMP },
-        entityHit: !!m.via_entity,
-        entities,
-        final,
-      };
-      return { ...m, sem, kw, t, final, entities, scoreBreakdown };
-    })
-    // Filter out anything that didn't match either path. sem_sim alone can be
-    // small-positive for unrelated text (cosine in 1536-d space is rarely
-    // zero); without a kw signal we'd return random neighbors. The kw floor
-    // drops nonsense queries against very-recent rows. Strong kw / entity
-    // matches bypass the cap.
-    // NOTE: rerank deliberately does NOT touch this filter — it runs on raw
-    // cosine/kw/entity signals. Cross-encoder relevance lives on a different
-    // scale, so it must not gate SEM_FLOOR. Rerank only RE-ORDERS the survivors.
-    .filter((m) => m.kw >= KW_FILTER_FLOOR || m.via_entity || (m.final >= SEM_FINAL_FLOOR && m.sem >= SEM_FLOOR))
+    .map((m: any) => scoreRow(m, { useSem, useKw }))
+    .filter((m) => passesFilter(m, SEM_FINAL_FLOOR))
     .sort((a, b) => b.final - a.final);
 
   // GOLDEN PATH: rerank off → identical to a chained `.sort(...).slice(0,

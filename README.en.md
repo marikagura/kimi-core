@@ -8,11 +8,12 @@ For the architecture, read **[ARCHITECTURE.en.md](./ARCHITECTURE.en.md)** — ev
 For the autonomous-agency layer (cron wake → drive/concern → action selection, DO_NOTHING one option not the default → dispatch),
 read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argument, the full citations, and the honest fault lines.
 
-> **Status: engine usable, polishing.** The core engine — hybrid retrieval, self-drive / concern, the
-> reproducible eval, the self-audit harness, the autonomous wake daemon — has landed, with tests and docs.
-> Still being polished: storage portability (a SQLite "lite" mode), retrieval indexing at scale,
-> conversational onboarding, and the delivery layer (see the [ROADMAP](./ROADMAP.md)). A real, in-progress
-> port — not a one-shot code drop.
+> **Status: engine complete, with tests and docs.** hybrid retrieval, self-drive / concern, the
+> reproducible eval, conversational onboarding, reference delivery providers, and the adversarial self-audit
+> harness have all landed (tsc + test + scrub run in CI). The scope is **personal 1:1** — multi-user /
+> production and a SQLite "lite" mode are explicit **non-goals** (see the [ROADMAP](./ROADMAP.en.md)). The
+> autonomous wake daemon is wired and unit-tested; actually running it needs a Claude subscription token +
+> a two-process setup (see "Running the autonomous daemon" below).
 
 ## What it is
 
@@ -28,20 +29,46 @@ read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argum
 - **Adversarial self-audit harness** — point a fleet of agents at your own fork to hunt leaks and bugs,
   with *behavioral* verification. (Static inference systematically over-claims — learned the hard way.)
 
+## What it does (a concrete example)
+
+(A fictional example user, not any real person.)
+
+Three days ago you told it you were rushing a project called Helios, due Friday. Today, on a scheduled wake, the self-drive "companionship" dimension rises (it's been a while) and the concern engine flags the approaching deadline — so what it surfaces isn't a generic hello, it's "Helios is due Friday — where did yesterday's demo get stuck?" Because it **retrieved** that memory, and the concern is **grounded in what you actually said**, not an RLHF fill-in-the-blank.
+
+That's the difference, in three points: memory is retrievable, concern is data-backed, and initiative fires **by affect, not by engagement**. Want numbers, not my word for it? `apps/gateway/src/eval/retrieval_cases.example.json` is a fictional example set; `npm run eval` runs it for hit@ / MRR / nDCG. A real sample output + a reentry / diary snapshot are in **[docs/EXAMPLE.en.md](./docs/EXAMPLE.en.md)**.
+
 ## Quick start (local)
 
 ```bash
 npm install
 docker compose up -d          # local Postgres + pgvector — or point DATABASE_URL at your own DB
-cp .env.example .env          # fill DATABASE_URL + OPENAI_API_KEY + OPENROUTER_API_KEY + KIMI_API_KEY
+npm run init                  # conversational onboarding — generates .env (with a fresh KIMI_API_KEY) + persona.md + AGENTS.md
+                              # (prefer to do it by hand? cp .env.example .env and fill it instead)
+# now open .env and fill OPENAI_API_KEY + OPENROUTER_API_KEY
 npm run db:migrate:deploy
-npm run init                  # onboarding — builds your config.yaml + persona.md
-npm run dev
+npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 ```
 
 **No persona ships in this repo.** There is no built-in personality, no example relationship, no word
 lists. You bring your own — `npm run init` walks you through building it. The engine ships empty on
 purpose; that emptiness is the strongest form of de-identification.
+
+## Running the autonomous daemon (optional)
+
+The engine is two processes: a **gateway** (the HTTP MCP server, `npm run dev`, on :3001 — all memory / tools go through it) and a **wake daemon** (wakes on a cron, reads drive / concern, decides what to do). The daemon is optional — without it, the engine is still a complete memory + retrieval backend.
+
+```bash
+# terminal 1: the gateway (start it first)
+npm run dev
+# terminal 2: the daemon
+cd apps/gateway
+npm run daemon          # runs continuously on a cron (use pm2 etc. in production)
+npm run daemon:wake     # fire a single wake right now — to verify
+```
+
+**The daemon uses the Claude Agent SDK**, so it needs a Claude (Anthropic) subscription token: generate one with `claude setup-token` and put it in `.env` as `CLAUDE_CODE_OAUTH_TOKEN`. The rest of the engine is provider-agnostic (LLM via OpenRouter, embeddings via OpenAI — both swappable); **only this autonomous wake loop is Claude-bound**. Using a different agent runtime? Swap the daemon layer; the engine doesn't change.
+
+> Honest note: the author verified the engine + eval end-to-end; the full daemon wake loop (transport / model / scripts are now aligned) is yours to confirm once on your own machine with your token.
 
 ## Storage
 
@@ -51,7 +78,9 @@ One `DATABASE_URL`, three ways to run it — same code, no extra backend:
 - **Self-hosted Postgres.** Point `DATABASE_URL` at your own server. Needs the `vector` extension; `pgroonga` is optional (CJK BM25 — falls back to `pg_trgm` without it).
 - **Managed Postgres (Supabase / Neon / RDS / …).** Same `DATABASE_URL`, just the hosted connection string. Supabase ships `pgvector` built in; the engine speaks plain Postgres over Prisma, so no vendor SDK is involved.
 
-All three above (Supabase included) work today. The **only** one not yet shipped is a zero-dependency SQLite "lite" backend (no Docker, no server) — it's on the [ROADMAP](./ROADMAP.en.md).
+All three above (Supabase included) work today. A zero-dependency SQLite "lite" backend is a **non-goal** (these three cover the personal 1:1 case; rationale in the [ROADMAP](./ROADMAP.en.md)).
+
+**Privacy boundary, stated plainly:** in local mode your **storage** (Postgres) never leaves the machine, but embeddings are sent to OpenAI and LLM calls to OpenRouter — so the memory text that gets embedded / reasoned over does go to third-party APIs. "Data never leaves" refers to the storage layer only. For fully-local, point the embedding / LLM endpoints at your own self-hosted ones.
 
 ## Pairs with AGENTS.md
 
@@ -76,7 +105,7 @@ epistemic half is the exception — it is method, not a stance to own. See **[do
 
 | command | what |
 |---|---|
-| `npm run init`  | onboarding wizard — turns a few answers into `config.yaml` + `persona.md` |
+| `npm run init`  | conversational onboarding — interviews you, turns your own words into `persona.md` + the `AGENTS.md` relationship layer + `.env` |
 | `npm run eval`  | reproducible retrieval evaluation (hit@5/10 · MRR · nDCG@10 · set-recall@10 · expectNone control; writes a trend Event, read back with `npm run eval:history`) |
 | `npm run scrub` | leak scanner — blocks any private residue from reaching a commit |
 

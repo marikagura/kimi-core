@@ -10,7 +10,7 @@
 
 ## 已经接好的两层
 
-- `npm run scrub` —— 机械式去标识化闸门。形状层（shape-layer）的正则放在仓库里（`scripts/scrub-scan.sh`）；你真正的私密词放在被 gitignore 的 `.scrub-secrets.local` 里，因此扫描器本身永远不会成为泄露源。它在 CI 中运行，也作为 pre-push hook 运行（`git config core.hooksPath scripts/hooks`）。
+- `npm run scrub` —— 机械式去标识化闸门。形状层（shape-layer）的正则放在仓库里（`scripts/scrub-scan.sh`）；你真正的私密词放在被 gitignore 的 `.scrub-secrets.local` 里，因此扫描器本身永远不会成为泄露源。它在 CI 中运行，也作为 pre-push hook 运行（`git config core.hooksPath scripts/hooks`）。**范围：scrub 只扫已 tracked 文件的内容**——git history 和 commit metadata（作者名 / 邮箱）不在它的范围内，由下面那套 agent 审计覆盖（本仓 commit 作者用的是化名身份，刻意为之）。
 - 本文档 —— 扫描器无法替代的人/agent 层：被改写过的或语义层面的残留，以及真正的漏洞。
 
 ## 运行审计（任意 multi-agent runner）

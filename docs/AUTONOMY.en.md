@@ -294,8 +294,9 @@ rewards it for acting when internal state does not call for it.
 
 The mechanism described above is a **skeleton**. Action selection, the
 wake loop, the drive math, the concern sweep, the HITL knob — all of it is
-machinery that decides *whether and when*, with neutral placeholder dimensions
-(`dimA` / `dimB` / `dimC`) and no content of its own. The **soul** that the
+machinery that decides *whether and when*, with no content of its own — the drive
+dimensions it reads are config-driven (the repo ships a renameable example roster;
+see [DRIVES.en.md](./DRIVES.en.md)). The **soul** that the
 mechanism reads lives in a `AGENTS.md` (or equivalent persona/principles
 document) — and it splits in two:
 

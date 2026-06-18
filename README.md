@@ -8,10 +8,10 @@
 关于 autonomous-agency 层（cron wake → drive/concern → action selection，DO_NOTHING 是一个选项而非默认 → dispatch），
 请读 **[docs/AUTONOMY.md](./docs/AUTONOMY.md)**——架构论证、完整 citations，以及诚实的断层线。
 
-> **状态：引擎可用、在打磨。** Core 引擎——hybrid retrieval、self-drive / concern、可复现 eval、
-> 自审 harness、autonomous wake daemon——已落地，有测试有文档。仍在打磨的是 storage 可移植性
-> （SQLite lite 模式）、规模化检索索引、对话式 onboarding、以及投递层（详见 [ROADMAP](./ROADMAP.md)）。
-> 这是一个真实的、进行中的移植——不是一次性的代码倾倒。
+> **状态：引擎完整，有测试有文档。** hybrid retrieval、self-drive / concern、可复现 eval、对话式
+> onboarding、参考投递 providers、对抗式自审 harness 都已落地（tsc + test + scrub 在 CI 里跑）。
+> 范围是**个人 1v1**——多用户 / production 与 SQLite "lite" 是明确的**非目标**（见 [ROADMAP](./ROADMAP.md)）。
+> autonomous wake daemon 已接线、有单元测试；真正跑它要 Claude 订阅 token + 两进程拓扑（见下「运行 autonomous daemon」）。
 
 ## 它是什么
 
@@ -27,20 +27,46 @@
 - **对抗式自审 harness** —— 把一支 agent 舰队对准你自己的 fork 去猎 leak 和 bug，
   带 *行为级* 验证。（Static inference 会系统性地 over-claim——这是吃过亏学来的。）
 
+## 它做什么（一个具体例子）
+
+（下面是虚构的示例用户，不是任何真人。）
+
+三天前你跟它说在赶一个叫 Helios 的项目、周五 deadline。今天一次定时 wake 里，self-drive 的「陪伴」维度涨起来（距上次聊很久了），concern 引擎也盯上了那个临近的 deadline——于是它 surface 出来的不是泛泛问候，是「Helios 周五就到了，昨天那版 demo 卡在哪？」。因为它**检索**到了那条记忆，而且关心**grounding 在你真说过的话**上，不是 RLHF 的填空式 care。
+
+差别就这三点：记忆可检索、关心有数据撑、主动**按情感不按 engagement** 触发。想看数字不想听我说？`apps/gateway/src/eval/retrieval_cases.example.json` 是一份虚构示例集，`npm run eval` 跑它给你 hit@ / MRR / nDCG；一份真实样例输出 + 一段 reentry / diary 快照见 **[docs/EXAMPLE.md](./docs/EXAMPLE.md)**。
+
 ## 快速开始（本地）
 
 ```bash
 npm install
 docker compose up -d          # local Postgres + pgvector — or point DATABASE_URL at your own DB
-cp .env.example .env          # fill DATABASE_URL + OPENAI_API_KEY + OPENROUTER_API_KEY + KIMI_API_KEY
+npm run init                  # conversational onboarding — generates .env (with a fresh KIMI_API_KEY) + persona.md + AGENTS.md
+                              # (prefer to do it by hand? cp .env.example .env and fill it instead)
+# now open .env and fill OPENAI_API_KEY + OPENROUTER_API_KEY
 npm run db:migrate:deploy
-npm run init                  # onboarding — builds your config.yaml + persona.md
-npm run dev
+npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 ```
 
 **这个 repo 里不附带任何 persona。** 没有内建的人格，没有示例关系，没有词表。
 你自己带——`npm run init` 会带你一步步把它建起来。引擎刻意空着出厂；
 这份空白正是最强形式的去标识化。
+
+## 运行 autonomous daemon（可选）
+
+引擎是两个进程：**gateway**（HTTP MCP 服务，`npm run dev` 起在 :3001，记忆 / 工具都从这里走）+ 一个 **wake daemon**（按 cron 醒来、读 drive / concern、决定做什么）。daemon 是可选的——不跑它，引擎照样是个完整的记忆 + 检索后端。
+
+```bash
+# 终端 1：gateway（必须先起）
+npm run dev
+# 终端 2：daemon
+cd apps/gateway
+npm run daemon          # 按 cron 持续跑（生产里用 pm2 等守护进程）
+npm run daemon:wake     # 只立刻跑一次 wake —— 用来验证
+```
+
+**daemon 用 Claude Agent SDK**，所以它需要一个 Claude（Anthropic）订阅 token：`claude setup-token` 生成，填进 `.env` 的 `CLAUDE_CODE_OAUTH_TOKEN`。引擎其余部分是 provider 无关的（LLM 走 OpenRouter、embedding 走 OpenAI，都可换）——**只有这条自主 wake 循环绑 Claude**；用别的 agent runtime 就换掉 daemon 那一层，引擎不动。
+
+> 诚实交代：作者端到端验证过引擎 + eval；完整的 daemon wake 循环（接线 / model / 传输都已对齐）请你用自己的 token 在自己机器上确认一次。
 
 ## 存储
 
@@ -50,7 +76,9 @@ npm run dev
 - **自建 Postgres。** 把 `DATABASE_URL` 指向你自己的服务器。需要 `vector` 扩展;`pgroonga` 可选(中文 BM25 —— 没有则回退 `pg_trgm`)。
 - **托管 Postgres(Supabase / Neon / RDS / …)。** 同一个 `DATABASE_URL`,换成托管的连接串就行。Supabase 内置 `pgvector`;引擎通过 Prisma 走标准 Postgres,不绑任何厂商 SDK。
 
-上面三种(含 Supabase)现在都能用。**唯一**还没做的是零依赖的 SQLite "lite" 后端(不用 Docker、不用 server)——它在 [ROADMAP](./ROADMAP.md) 上。
+上面三种(含 Supabase)现在都能用。零依赖的 SQLite "lite" 后端是**非目标**(个人 1v1 场景这三条已够;理由见 [ROADMAP](./ROADMAP.md))。
+
+**隐私边界说清楚**:本地模式下你的**存储**(Postgres)一个字节不出门,但 embedding 会发给 OpenAI、LLM 调用会发给 OpenRouter——所以被嵌入 / 被推理的记忆文本是发去第三方 API 的。「数据不出门」只指存储层。想全本地,把 embedding / LLM 端点换成你自托管的即可。
 
 ## 与 AGENTS.md 配对
 
@@ -75,7 +103,7 @@ Epistemic 那一半是例外——它是方法，不是一个要去认领的 sta
 
 | command | what |
 |---|---|
-| `npm run init`  | onboarding wizard —— 把几个回答变成 `config.yaml` + `persona.md` |
+| `npm run init`  | 对话式 onboarding —— 访谈你,把你自己的话变成 `persona.md` + `AGENTS.md` 关系层 + `.env` |
 | `npm run eval`  | 可复现的 retrieval evaluation（hit@5/10 · MRR · nDCG@10 · set-recall@10 · expectNone 负控；写趋势 Event，`npm run eval:history` 读回） |
 | `npm run scrub` | leak scanner —— 拦住任何私有残留进入 commit |
 

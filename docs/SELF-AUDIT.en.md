@@ -23,6 +23,9 @@ the plausible-but-wrong findings a single pass would ship.
   in the repo (`scripts/scrub-scan.sh`); your real private words live in a
   gitignored `.scrub-secrets.local`, so the scanner is never itself a leak
   source. Runs in CI and as a pre-push hook (`git config core.hooksPath scripts/hooks`).
+  **Scope: scrub only scans tracked file *content*** — git history and commit
+  metadata (author name / email) are out of its reach and are covered by the agent
+  audit below (this repo's commits use a deliberate pseudonymous identity).
 - This doc — the human/agent layer the scanner cannot replace: rewritten or
   semantic residue, and real vulnerabilities.
 

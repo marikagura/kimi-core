@@ -15,14 +15,11 @@
 - **参考投递 providers** —— 可配置的 Notifier(console / webhook)+ search provider(http),env 驱动、默认关(`lib/providers.ts`,wire 进 daemon)。
 - event-sourcing + append-only + 人工 curation;CI(tsc + test + scrub)。
 
-## 还差什么(未完成)
+## 可选(非核心,有需要再加)
 
-- **SQLite lite 后端。** 现在跑在 Postgres + pgvector 上(一个 `DATABASE_URL`)。一层 storage / 检索后端抽象 + SQLite(sqlite-vec 向量 + FTS5 词法)给一个零依赖的 "lite" 模式:`npm install` 就能跑,不用 Docker、不用 server —— 正合单用户个人场景。检索层的原生 SQL(pgvector `<=>`、pg_trgm、pgroonga)绑死 Postgres,SQLite 等于第二套检索实现,是个多回合工程。**这是下一步的重点。**
-- **更多投递 / 搜索集成。** 参考实现已发(webhook notifier、http search provider);更多开箱即用的具体后端(Slack / Discord / ntfy 预设、特定 search API 适配)仍欢迎。EXPLORE 的建议内容按设计留空(persona 层)。
+- **更多投递 / 搜索后端预设。** 参考实现已发(webhook notifier、http search provider);更多开箱即用的具体后端(Slack / Discord / ntfy 预设、特定 search API 适配)欢迎,但不是必需。EXPLORE 的建议内容按设计留空(persona 层)。
+- **发布跨版本的 eval 数字。** 把 `retrieval_eval` 的趋势随版本贴出来,纯展示用,不影响引擎。
 
+## 非目标(刻意不做)
 
-## v2(下一步)
-
-- **SQLite lite** —— 零依赖个人模式(下一步的重点,多回合)。
-- 把跨版本的 eval 数字发布出来(回归趋势)。
-- 更多开箱即用的投递 / 搜索后端预设。
+- **SQLite / 零依赖 "lite" 模式 —— 不做。** 现在三条跑法 —— 本地 docker、自建 Postgres、托管 Postgres(Supabase / Neon / … 任意带 `pgvector` 的)—— 已覆盖个人单用户的需求。SQLite lite 只多服务一个很窄的场景(既不碰 docker、又要纯本地零服务器、又 semi-technical),收益窄;代价是检索层(pgvector `<=>` / pg_trgm / pgroonga)要在 SQLite(sqlite-vec + FTS5)上再写**第二套检索实现** —— 一个永久的 drift 源,违背本仓「单一 DRY scorer,不许手抄漂移」的原则。窄收益换长期维护负担,不值。

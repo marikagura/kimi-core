@@ -168,16 +168,23 @@ export function registerAllTools(server: McpServer) {
       // Unsupported("vector(1536)") which can't be set via create({ data }),
       // so we UPDATE with raw SQL. Failure is tolerated — the nightly sweep
       // patches any null rows next run.
-      const embText = `${title}\n${summary || content}`;
-      const emb = await embedText(embText);
-      if (emb) {
-        const vec = toVectorLiteral(emb);
-        // Write embeddingAt too — the sweep uses it to decide whether an edited
-        // row's embedding is stale; without it the first updatedAt bump would
-        // trigger one redundant re-embed.
-        await prisma.$executeRaw`
-          UPDATE memories SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${memory.id}
-        `;
+      try {
+        const embText = `${title}\n${summary || content}`;
+        const emb = await embedText(embText);
+        if (emb) {
+          const vec = toVectorLiteral(emb);
+          // Write embeddingAt too — the sweep uses it to decide whether an edited
+          // row's embedding is stale; without it the first updatedAt bump would
+          // trigger one redundant re-embed.
+          await prisma.$executeRaw`
+            UPDATE memories SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${memory.id}
+          `;
+        }
+      } catch (e: any) {
+        // Tolerated, as the comment above promises: the memory row is already
+        // saved; the nightly sweep re-embeds null rows. Don't fail the whole write
+        // on an embed / insert error (e.g. a misconfigured EMBED_MODEL dimension).
+        console.warn(`[memory_write] embedding failed (sweep will retry): ${e?.message ?? e}`);
       }
 
       // Depth fallback: qualifying memories with no topic get an async depth

@@ -34,6 +34,20 @@ const SS_NEG_VALENCE = Number(process.env.CONCERN_SS_NEG_VALENCE ?? -0.2); // th
 const SS_STRONG_NEG = Number(process.env.CONCERN_SS_STRONG_NEG ?? -0.6); // strong negative: rare hard signal, stands up same-day (bypasses the gate)
 const SS_MIN_COUNT = Number(process.env.CONCERN_SS_MIN_COUNT ?? 2); // weak negatives need at least N under the same key
 const SS_MIN_DAYS = Number(process.env.CONCERN_SS_MIN_DAYS ?? 2); // across at least N distinct calendar days
+
+// Recurrence gate for self-score concerns. A strong single negative (v <=
+// SS_STRONG_NEG) surfaces immediately; weak negatives need >= SS_MIN_COUNT across
+// >= SS_MIN_DAYS distinct days (counted in the configured timezone via localDate).
+// `negs` = the self-scores under one concern key, already filtered to negative
+// valence. Pure + exported so the load-bearing gate is unit-tested.
+export function recurrenceMet(
+  negs: { valence: number | null; validFrom?: Date | null; createdAt: Date }[],
+): boolean {
+  if (negs.length === 0) return false;
+  if (negs.some((m) => (m.valence ?? 0) <= SS_STRONG_NEG)) return true;
+  const days = new Set(negs.map((m) => localDate(m.validFrom ?? m.createdAt)));
+  return negs.length >= SS_MIN_COUNT && days.size >= SS_MIN_DAYS;
+}
 const humanizeKey = (k: string) => k.replace(/^(ss_|cc_)/, "").replace(/_/g, " ");
 
 // Memory(SELF, OPEN/EASING, concernKey) → ActiveState SELF_CONCERN.
@@ -81,15 +95,9 @@ export async function deriveConcerns(opts: { dryRun?: boolean } = {}): Promise<D
   for (const [key, list] of byKeyAll) {
     if (list.every((m) => m.memoryType === "SELF_SCORE")) {
       const negs = list.filter((m) => (m.valence ?? 0) <= SS_NEG_VALENCE);
-      if (negs.length === 0) continue;
-      // Count distinct days in the configured timezone (localDate), NOT UTC — the
-      // recurrence gate's "across >= N days" must use the same day boundary as the
-      // rest of the engine, or a late-night session can land on the wrong UTC day.
-      const days = new Set(negs.map((m) => localDate(m.validFrom ?? m.createdAt)));
-      // strong single (v <= SS_STRONG_NEG) stands up immediately; weak negatives
-      // need >= SS_MIN_COUNT across >= SS_MIN_DAYS days
-      const strongSingle = negs.some((m) => (m.valence ?? 0) <= SS_STRONG_NEG);
-      if (!strongSingle && (negs.length < SS_MIN_COUNT || days.size < SS_MIN_DAYS)) continue; // recurrence not met → don't surface (memory stays OPEN as evidence)
+      // recurrence not met → don't surface (the memory stays OPEN as evidence).
+      // Day counting (localDate, KIMI_TZ) + thresholds live in recurrenceMet.
+      if (!recurrenceMet(negs)) continue;
       startByKey.set(
         key,
         negs.reduce((a, m) => {

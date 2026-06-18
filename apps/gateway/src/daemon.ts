@@ -352,7 +352,7 @@ async function wake(force = false) {
 // ===== scheduler (long-lived; does not burn LLM tokens) =====
 ensureSubscriptionAuth(); // fail fast at startup if the token is missing
 setNotifier(getNotifier()); // install the configured notifier (default: console/no-op)
-// Cron schedule is config-driven (default: 14:00 and 23:00 daily).
+// Cron schedule is config-driven (default: 09:00 and 21:00 daily, in KIMI_CRON_TZ).
 const WAKE_CRON = process.env.DAEMON_WAKE_CRON || "0 9,21 * * *";
 const WAKE_TZ = process.env.KIMI_CRON_TZ || "Asia/Shanghai";
 cron.schedule(WAKE_CRON, () => {

@@ -129,6 +129,30 @@ describe("NOTE — always a pending item for human review", () => {
   });
 });
 
+describe("EXPLORE — outward suggestion, content supplied by config/agent", () => {
+  it("skips (visibly) when no suggestion content — the empty seam", async () => {
+    const r = await dispatchAction("EXPLORE", ctx({}), "auto");
+    expect(r.outcome).toBe("skipped");
+    expect(r.performed).toBe(false);
+    expect(db.pendingItem.create).not.toHaveBeenCalled();
+  });
+
+  it("in propose stages the suggestion as a pending item (no commit)", async () => {
+    const r = await dispatchAction("EXPLORE", ctx({ action_content: "suggest a walk" }), "propose");
+    expect(r.outcome).toBe("staged");
+    expect(r.performed).toBe(false);
+    expect(db.pendingItem.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("in auto commits a decision marker only — core owns no delivery channel", async () => {
+    const r = await dispatchAction("EXPLORE", ctx({ action_content: "suggest a walk" }), "auto");
+    expect(r.outcome).toBe("committed");
+    expect(r.performed).toBe(true);
+    expect(db.pendingItem.create).not.toHaveBeenCalled();
+    expect(db.event.create).toHaveBeenCalled(); // the decision marker
+  });
+});
+
 describe("registry + extension seam", () => {
   it("lists the built-in actions", () => {
     const a = listActions();

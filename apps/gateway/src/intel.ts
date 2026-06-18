@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { numEnv } from "./lib/env.js";
 import cron from "node-cron";
 import prisma from "./db.js";
 import { Prisma } from "@prisma/client";
@@ -327,7 +328,7 @@ export async function scanDialogueDigests(
 
   // Group by session, not by calendar day. A session = a continuous conversation;
   // a gap larger than GAP_H starts a new session. events are already time-ascending.
-  const GAP_H = Number(process.env.INTEL_SESSION_GAP_H || 4);
+  const GAP_H = numEnv("INTEL_SESSION_GAP_H", 4);
   const sessions: (typeof events)[] = [];
   for (const e of events) {
     const cur = sessions[sessions.length - 1];
@@ -341,7 +342,7 @@ export async function scanDialogueDigests(
 
   let created = 0, skipped = 0, failed = 0;
 
-  const MIN_TURNS = Number(process.env.INTEL_MIN_TURNS || 5);
+  const MIN_TURNS = numEnv("INTEL_MIN_TURNS", 5);
 
   for (const dayEvents of sessions) {
     // idle gate: only digest once a session has been idle for GAP_H — after that,
@@ -674,8 +675,11 @@ async function runAll() {
 // →derive pass current before downstream consumers read concern/drive state.
 const DAILY_CRON = process.env.INTEL_DAILY_CRON || "0 9 * * *";
 const CRON_TZ = process.env.KIMI_CRON_TZ ?? DEFAULT_TZ;
-cron.schedule(DAILY_CRON, runAll, { timezone: CRON_TZ });
-runAll();
+// Wrap so a rejected run (e.g. DB unavailable at cold start) is a logged error, not
+// an unhandled rejection that crashes the long-lived intel process.
+const safeRunAll = () => runAll().catch((e: any) => console.error("[intel] runAll error:", e?.message || e));
+cron.schedule(DAILY_CRON, safeRunAll, { timezone: CRON_TZ });
+safeRunAll();
 
 // dialogue_digest hourly tick — a session is digested once it has been idle for
 // GAP_H. A concurrency lock prevents a second run starting before the previous
@@ -694,7 +698,8 @@ async function digestTick() {
   } catch (e: any) { console.error("[digest tick] err:", e.message); }
   finally { digestRunning = false; }
 }
-cron.schedule(DIGEST_CRON, digestTick, { timezone: CRON_TZ });
-digestTick();
+const safeDigestTick = () => digestTick().catch((e: any) => console.error("[intel] digestTick error:", e?.message || e));
+cron.schedule(DIGEST_CRON, safeDigestTick, { timezone: CRON_TZ });
+safeDigestTick();
 
 console.log(`intel started. runAll cron=${DAILY_CRON} ${CRON_TZ}; dialogue_digest cron=${DIGEST_CRON}.`);

@@ -16,16 +16,17 @@
 // EASING; clean → RESOLVED.
 
 import prisma from "../db.js";
+import { numEnv } from "./env.js";
 
 const CONCERN_KEY = process.env.DATA_PROBE_CONCERN_KEY ?? "data_debt";
 
 // Fallback thresholds (used when no baseline row is configured).
 const FALLBACK = {
-  weeklyAvg: Number(process.env.DATA_PROBE_WEEKLY_AVG ?? 7),
-  shortValue: Number(process.env.DATA_PROBE_SHORT_VALUE ?? 4),
-  shortCount: Number(process.env.DATA_PROBE_SHORT_COUNT ?? 2),
+  weeklyAvg: numEnv("DATA_PROBE_WEEKLY_AVG", 7),
+  shortValue: numEnv("DATA_PROBE_SHORT_VALUE", 4),
+  shortCount: numEnv("DATA_PROBE_SHORT_COUNT", 2),
 };
-const WINDOW_N = Number(process.env.DATA_PROBE_WINDOW_N ?? 7);
+const WINDOW_N = numEnv("DATA_PROBE_WINDOW_N", 7);
 
 // A single data window: a measured value over some span.
 export type DataWindow = { value: number };

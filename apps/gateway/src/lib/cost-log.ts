@@ -9,12 +9,13 @@
 // Per-million-token prices. Defaults below are reasonable placeholders; set the
 // env vars to match the model and provider you actually bill against. Mismatched
 // prices only skew the estUsd column — they do not affect any LLM behavior.
-const PRICE_CACHE_READ = Number(process.env.PRICE_CACHE_READ_PER_M ?? 0.5);
-const PRICE_CACHE_WRITE = Number(process.env.PRICE_CACHE_WRITE_PER_M ?? 6.25);
-const PRICE_FRESH_INPUT = Number(process.env.PRICE_INPUT_PER_M ?? 5);
-const PRICE_OUTPUT = Number(process.env.PRICE_OUTPUT_PER_M ?? 25);
+const PRICE_CACHE_READ = numEnv("PRICE_CACHE_READ_PER_M", 0.5);
+const PRICE_CACHE_WRITE = numEnv("PRICE_CACHE_WRITE_PER_M", 6.25);
+const PRICE_FRESH_INPUT = numEnv("PRICE_INPUT_PER_M", 5);
+const PRICE_OUTPUT = numEnv("PRICE_OUTPUT_PER_M", 25);
 
 import prisma from "../db.js";
+import { numEnv } from "./env.js";
 
 export async function logCost(kind: string, usage: any): Promise<void> {
   const u = usage ?? {};

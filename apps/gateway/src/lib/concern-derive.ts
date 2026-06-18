@@ -6,6 +6,7 @@
 // (source!=derive) are left alone.
 
 import prisma from "../db.js";
+import { numEnv } from "./env.js";
 import { driveBoostByDim } from "./thought-pool.js";
 import { localDate } from "../time.js";
 import { CHAT_SOURCE, CROSS_CHAT_SOURCE } from "@kimi/context-core";
@@ -32,10 +33,10 @@ export interface DeriveResult {
 // does not stand up a concern. Mixing in any non-self-score backing (a
 // hand-written STATE etc.) = a deliberately written concern, no gate (keeps the
 // original behavior). Tunables read from env (see config.example.yaml concern.*).
-const SS_NEG_VALENCE = Number(process.env.CONCERN_SS_NEG_VALENCE ?? -0.2); // threshold for self-score "negative"
-const SS_STRONG_NEG = Number(process.env.CONCERN_SS_STRONG_NEG ?? -0.6); // strong negative: rare hard signal, stands up same-day (bypasses the gate)
-const SS_MIN_COUNT = Number(process.env.CONCERN_SS_MIN_COUNT ?? 2); // weak negatives need at least N under the same key
-const SS_MIN_DAYS = Number(process.env.CONCERN_SS_MIN_DAYS ?? 2); // across at least N distinct calendar days
+const SS_NEG_VALENCE = numEnv("CONCERN_SS_NEG_VALENCE", -0.2); // threshold for self-score "negative"
+const SS_STRONG_NEG = numEnv("CONCERN_SS_STRONG_NEG", -0.6); // strong negative: rare hard signal, stands up same-day (bypasses the gate)
+const SS_MIN_COUNT = numEnv("CONCERN_SS_MIN_COUNT", 2); // weak negatives need at least N under the same key
+const SS_MIN_DAYS = numEnv("CONCERN_SS_MIN_DAYS", 2); // across at least N distinct calendar days
 
 // Recurrence gate for self-score concerns. A strong single negative (v <=
 // SS_STRONG_NEG) surfaces immediately; weak negatives need >= SS_MIN_COUNT across
@@ -193,7 +194,7 @@ export type SweepVerdict = {
   applied: boolean; // actually wrote the DB (dryRun=false, verdict != linger, rows changed)
 };
 
-const SWEEP_TAKE = Number(process.env.CONCERN_SWEEP_TAKE ?? 50);
+const SWEEP_TAKE = numEnv("CONCERN_SWEEP_TAKE", 50);
 
 export async function sweepConcerns(
   callLLM: SweepLLM,
@@ -311,15 +312,15 @@ export async function sweepConcerns(
 //
 // Privacy: SELF_DRIVE surfaces onto the score page / reentry, so its content is
 // generalized and sourceMemoryId does not point back.
-const TAU_R = Number(process.env.DRIVE_TAU_RECENCY ?? 4); // recency half-life ~2.8d
-const WANT_SCALE = Number(process.env.DRIVE_WANT_SCALE ?? 14); // presence-dim want fills over 14 days
-const OWED_SCALE = Number(process.env.DRIVE_OWED_SCALE ?? 21); // owed aging is slower
-const GROUND_WINDOW = Number(process.env.DRIVE_GROUND_WINDOW ?? 90); // grounding history window (days)
-const AFTERGLOW_V = Number(process.env.DRIVE_AFTERGLOW_VALENCE ?? 0.8); // peak self-score valence threshold
-const AFTERGLOW_A = Number(process.env.DRIVE_AFTERGLOW_AROUSAL ?? 0.8); // and arousal threshold (excludes calm satisfaction)
-const TAU_LIKING = Number(process.env.DRIVE_TAU_LIKING ?? 3); // afterglow=liking decay (consummatory/momentary, faster than wanting's TAU_R)
-const REFRACTORY_FLOOR = Number(process.env.DRIVE_REFRACTORY_FLOOR ?? 0.07); // refractory tonic floor: a baseline craving remains even right after satisfaction (SEEKING tonic doesn't extinguish), so this dim doesn't disappear from reentry
-const BOND_BETA = Number(process.env.DRIVE_BOND_BETA ?? 0.7); // bonding-satiety damping strength: after a closed bond, press the recency leg ~35%
+const TAU_R = numEnv("DRIVE_TAU_RECENCY", 4); // recency half-life ~2.8d
+const WANT_SCALE = numEnv("DRIVE_WANT_SCALE", 14); // presence-dim want fills over 14 days
+const OWED_SCALE = numEnv("DRIVE_OWED_SCALE", 21); // owed aging is slower
+const GROUND_WINDOW = numEnv("DRIVE_GROUND_WINDOW", 90); // grounding history window (days)
+const AFTERGLOW_V = numEnv("DRIVE_AFTERGLOW_VALENCE", 0.8); // peak self-score valence threshold
+const AFTERGLOW_A = numEnv("DRIVE_AFTERGLOW_AROUSAL", 0.8); // and arousal threshold (excludes calm satisfaction)
+const TAU_LIKING = numEnv("DRIVE_TAU_LIKING", 3); // afterglow=liking decay (consummatory/momentary, faster than wanting's TAU_R)
+const REFRACTORY_FLOOR = numEnv("DRIVE_REFRACTORY_FLOOR", 0.07); // refractory tonic floor: a baseline craving remains even right after satisfaction (SEEKING tonic doesn't extinguish), so this dim doesn't disappear from reentry
+const BOND_BETA = numEnv("DRIVE_BOND_BETA", 0.7); // bonding-satiety damping strength: after a closed bond, press the recency leg ~35%
 
 import { DEPTH_TOPIC_SLUG } from "./depth-judge.js"; // example bonding-dim topic marker — one definition, shared with the judge
 
@@ -406,7 +407,7 @@ export type ValenceSample = { self: number; user: number };
 // Not enough data (< MIN) → identity; enough → a global additive offset
 // (mean(external - self)), monotonic / order-preserving. Isotonic / per-axis
 // refinements are deferred — first get the pipeline working and accrue data.
-const RECAL_MIN_SAMPLES = Number(process.env.DRIVE_RECAL_MIN_SAMPLES ?? 5);
+const RECAL_MIN_SAMPLES = numEnv("DRIVE_RECAL_MIN_SAMPLES", 5);
 export function recalibrateValence(v: number, samples: ValenceSample[]): number {
   if (samples.length < RECAL_MIN_SAMPLES) return v;
   const offset = samples.reduce((s, p) => s + (p.user - p.self), 0) / samples.length;
@@ -650,7 +651,7 @@ export async function deriveDrives(opts: { dryRun?: boolean; now?: Date } = {}):
 // Time decay: an OPEN EVIDENCE/SUBJECTIVE concern not updated for DECAY_DAYS →
 // EASING (felt strength fades, attention no longer pulled). DATA does not decay
 // (the probe manages it). SUBJECTIVE never auto-RESOLVES.
-const DECAY_DAYS = Number(process.env.CONCERN_DECAY_DAYS ?? 10);
+const DECAY_DAYS = numEnv("CONCERN_DECAY_DAYS", 10);
 export async function decayStaleConcerns(opts: { dryRun?: boolean } = {}): Promise<number> {
   const cutoff = new Date(Date.now() - DECAY_DAYS * 86400000);
   const stale = await prisma.memory.findMany({

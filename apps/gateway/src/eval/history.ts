@@ -3,9 +3,10 @@
 // Prints the last N retrieval_eval Events (written by runEval) newest-first, so
 // you can see hit@10 / MRR / nDCG@10 move over time and spot a regression.
 import "dotenv/config";
+import { numEnv } from "../lib/env.js";
 import prisma from "../db.js";
 
-const N = Number(process.env.EVAL_HISTORY_N ?? 14);
+const N = numEnv("EVAL_HISTORY_N", 14);
 
 async function main(): Promise<void> {
   const evs = await prisma.event.findMany({

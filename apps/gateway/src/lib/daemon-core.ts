@@ -13,6 +13,7 @@
 // schedule), never message bodies of sensitive content.
 
 import "dotenv/config";
+import { numEnv } from "./env.js";
 import prisma from "../db.js";
 import { localDate, localDateTime } from "../time.js";
 import { CHAT_SOURCE, CROSS_CHAT_SOURCE, HOOK_SOURCE, LOOP_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE, parseChatEvent } from "@kimi/context-core";
@@ -41,7 +42,7 @@ export function ensureSubscriptionAuth() {
 // message falls outside this window those rows are history, not what the user
 // "just said" — feeding them in undated lets the wake loop quote days-old
 // messages as current. Tunable via env.
-const CHAT_LIVE_WINDOW_H = Number(process.env.GROUND_CHAT_LIVE_WINDOW_H ?? 36);
+const CHAT_LIVE_WINDOW_H = numEnv("GROUND_CHAT_LIVE_WINDOW_H", 36);
 
 // ── ground truth: what the user is doing right now (pre-computed for the prompt).
 //    Shared so sibling wake loops stay in sync. The commit window is a fixed

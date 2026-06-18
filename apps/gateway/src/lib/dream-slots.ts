@@ -12,6 +12,7 @@
 // dreamSlots.*).
 
 import prisma from "../db.js";
+import { numEnv } from "./env.js";
 import { tzOffsetMs } from "../time.js";
 
 // Local-clock hours at which briefing wakes are scheduled.
@@ -29,8 +30,8 @@ export const SLOT_HOURS_LOCAL: number[] = (() => {
 // takes time; give margin). Misses older than WINDOW_MS are NOT chased — if the
 // box was down for hours we don't want a stale catch-up firing a useless late
 // push.
-const GRACE_MS = Number(process.env.DREAM_GRACE_MINUTES ?? 12) * 60 * 1000;
-const WINDOW_MS = Number(process.env.DREAM_WINDOW_HOURS ?? 3) * 60 * 60 * 1000;
+const GRACE_MS = numEnv("DREAM_GRACE_MINUTES", 12) * 60 * 1000;
+const WINDOW_MS = numEnv("DREAM_WINDOW_HOURS", 3) * 60 * 60 * 1000;
 
 // UTC instant of `hh:00` local on the local-calendar date of `now` (+dayOffset).
 function slotInstant(now: Date, hh: number, dayOffset: number): Date {

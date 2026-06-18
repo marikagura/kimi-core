@@ -13,13 +13,14 @@
 // thoughtPool.*).
 
 import prisma from "../db.js";
+import { numEnv } from "./env.js";
 
-const D = Number(process.env.THOUGHT_DECAY_D ?? 0.5);            // ACT-R decay
-const FIX_THRESHOLD = Number(process.env.THOUGHT_FIX_THRESHOLD ?? 0.4); // B over this + below → fixation
-const SPACING_MIN_DAYS = Number(process.env.THOUGHT_SPACING_MIN_DAYS ?? 1); // span guard
-const FIX_MIN_HITS = Number(process.env.THOUGHT_FIX_MIN_HITS ?? 3); // at least N hits to count as repeated
-const FIX_RESOLVE_DAYS = Number(process.env.THOUGHT_FIX_RESOLVE_DAYS ?? 3); // fixation held long enough → resolve
-const HARD_TIMEOUT_DAYS = Number(process.env.THOUGHT_HARD_TIMEOUT_DAYS ?? 30); // hard timeout: force-resolve past this
+const D = numEnv("THOUGHT_DECAY_D", 0.5);            // ACT-R decay
+const FIX_THRESHOLD = numEnv("THOUGHT_FIX_THRESHOLD", 0.4); // B over this + below → fixation
+const SPACING_MIN_DAYS = numEnv("THOUGHT_SPACING_MIN_DAYS", 1); // span guard
+const FIX_MIN_HITS = numEnv("THOUGHT_FIX_MIN_HITS", 3); // at least N hits to count as repeated
+const FIX_RESOLVE_DAYS = numEnv("THOUGHT_FIX_RESOLVE_DAYS", 3); // fixation held long enough → resolve
+const HARD_TIMEOUT_DAYS = numEnv("THOUGHT_HARD_TIMEOUT_DAYS", 30); // hard timeout: force-resolve past this
 
 // Source-shape bias guard: weight each hit by its origin. A model-internal
 // ("self_voice") source defaults to 0.5 as a placeholder — once enough

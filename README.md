@@ -26,7 +26,7 @@
   hard-negative 负控（expectNone）和 reranker / 组件 A/B。按 keyword 标注（不绑 row-id，
   re-seed 库也不失效），每跑写一条趋势 Event。这些数字你可以自己重跑。
 - **对抗式自审 harness** —— 用一组 agent 对准你自己的 fork 去查 leak 和 bug，
-  带 *行为级* 验证。（Static inference 会系统性地 over-claim——这是吃过亏学来的。）
+  带 *行为级* 验证。（Static inference 会系统性地 over-claim。）
 
 ## 它做什么（一个具体例子）
 

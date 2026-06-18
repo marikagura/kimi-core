@@ -20,6 +20,8 @@ export async function callLLMShort(
   const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
 
   const res = await fetchWithRetry(`${llmBaseUrl()}/chat/completions`, {
+    // LLM completions can run past the 60s fetch default; give them room.
+    timeoutMs: 180_000,
     method: "POST",
     headers: {
       Authorization: `Bearer ${llmApiKey()}`,

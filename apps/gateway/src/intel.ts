@@ -38,6 +38,9 @@ const CHAT_INTEL_OFF = true;
 
 async function callLLM(system: string, user: string, maxTokens = 2000, modelOverride?: string, thinkingTokens?: number) {
   const res = await fetchWithRetry(`${llmBaseUrl()}/chat/completions`, {
+    // LLM completions (esp. the extended-thinking self-sweep) can legitimately run
+    // well past the 60s default; give them room so a slow-but-valid call isn't aborted.
+    timeoutMs: 180_000,
     method: "POST",
     headers: {
       "Authorization": `Bearer ${llmApiKey()}`,

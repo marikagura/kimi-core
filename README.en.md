@@ -7,6 +7,7 @@ A **personal, single-user agent memory OS** — an agentic memory + self-drive e
 For the architecture, read **[ARCHITECTURE.en.md](./ARCHITECTURE.en.md)** — everything below is just parts.
 For the autonomous-agency layer (cron wake → drive/concern → action selection, DO_NOTHING one option not the default → dispatch),
 read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argument, the full citations, and the honest fault lines.
+For the engineering patterns when wiring a surface (prompt caching / retry / credential rotation, battle-tested), see **[docs/PATTERNS.en.md](./docs/PATTERNS.en.md)**.
 
 > **Status: engine complete, with tests and docs.** hybrid retrieval, self-drive / concern, the
 > reproducible eval, conversational onboarding, reference delivery providers, and the adversarial self-audit

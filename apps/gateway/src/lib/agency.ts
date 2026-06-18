@@ -29,7 +29,7 @@
 
 import prisma from "../db.js";
 import { localDateTime } from "../time.js";
-import { recalibrateValence, type ValenceSample } from "./concern-derive.js";
+import { recalibrateValence, slugify, type ValenceSample } from "./concern-derive.js";
 
 // ── action vocabulary ────────────────────────────────────────────────────────
 // Acting is the normal case — this layer's users want to see the agent do
@@ -258,7 +258,7 @@ registerAction({
     const ts = localDateTime(now).slice(0, 16);
     const concernSlug =
       typeof parsed.concern_topic === "string" && parsed.concern_topic.trim()
-        ? parsed.concern_topic.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_")
+        ? slugify(parsed.concern_topic)
         : undefined;
 
     // propose mode (HITL): park the entry, withhold the write.

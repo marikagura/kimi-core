@@ -18,6 +18,7 @@
     "init": "tsx scripts/init.ts",
     "scrub": "bash scripts/scrub-scan.sh",
     "eval": "tsx apps/gateway/src/eval/run.ts",
+    "eval:history": "tsx apps/gateway/src/eval/history.ts",
     "test": "vitest run"
   },
   "devDependencies": {

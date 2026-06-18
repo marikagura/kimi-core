@@ -1,0 +1,51 @@
+{
+  "_about": "Example labeled set for `npm run eval`. Fully fictional demo world — NO real persona. Copy to retrieval_cases.json (gitignored) and label your OWN store. Labeling is by KEYWORD: a returned doc counts as relevant iff its title/summary/content contains any listed keyword (case-insensitive). `kind` is a free-form bucket for the per-category breakdown. `expectNone` = negative control (must return nothing). `expectAll` = whole-picture coverage (set-recall). `scope:\"full\"` cases only run with `npm run eval -- scope=full` (they target the observation/profile/RESTRICTED pool).",
+  "cases": [
+    { "kind": "literal_cjk", "query": "拿铁", "expectKeywords": ["拿铁", "latte"], "_note": "literal CJK token must be found by the lexical arm even with weak embeddings" },
+    { "kind": "literal_cjk", "query": "攀岩", "expectKeywords": ["攀岩", "climbing"] },
+
+    { "kind": "english_keyword", "query": "rock climbing", "expectKeywords": ["climbing", "bouldering"] },
+    { "kind": "english_keyword", "query": "pour-over coffee", "expectKeywords": ["pour-over", "coffee"] },
+
+    { "kind": "alias_bridge", "query": "JP", "expectKeywords": ["Jordan", "Park"], "_note": "alias should bridge to the canonical entity via the entity-name ILIKE" },
+    { "kind": "alias_bridge", "query": "the Helios deck", "expectKeywords": ["Helios", "presentation"] },
+
+    { "kind": "entity_person", "query": "Jordan Park", "expectKeywords": ["Jordan", "colleague"] },
+    { "kind": "entity_person", "query": "who is Mochi", "expectKeywords": ["cat", "Mochi"] },
+
+    { "kind": "abstract_core", "query": "what does the user care about at work", "expectKeywords": ["deep work", "focus"] },
+    { "kind": "abstract_core", "query": "the user's stance on meetings", "expectKeywords": ["fewer meetings", "async"] },
+
+    { "kind": "fuzzy_semantic", "query": "morning routine", "expectKeywords": ["pour-over", "coffee"], "_note": "no shared keyword with the doc title — pure semantic recall" },
+    { "kind": "fuzzy_semantic", "query": "how they unwind on weekends", "expectKeywords": ["climbing", "bouldering"] },
+
+    { "kind": "topic_concept", "query": "Helios project", "expectKeywords": ["Helios", "project"] },
+    { "kind": "topic_concept", "query": "release planning", "expectKeywords": ["roadmap", "milestone"] },
+
+    { "kind": "temporal", "query": "deadline this month", "expectKeywords": ["deadline", "Helios"] },
+    { "kind": "temporal", "query": "what shipped recently", "expectKeywords": ["shipped", "v2"] },
+
+    { "kind": "graph_multihop", "query": "who does the user climb with", "expectKeywords": ["Jordan", "climbing"], "_note": "answer requires linking person ↔ activity across two docs" },
+
+    { "kind": "ranking_hard", "query": "favorite coffee", "expectKeywords": ["pour-over"], "_note": "many docs mention 'coffee'; the specific preference must rank first" },
+    { "kind": "ranking_hard", "query": "preferred work hours", "expectKeywords": ["mornings", "early"] },
+
+    { "kind": "semantic_bridge", "query": "staying focused", "expectKeywords": ["deep work", "focus"] },
+    { "kind": "semantic_bridge", "query": "avoiding burnout", "expectKeywords": ["boundaries", "rest"] },
+
+    { "kind": "negative", "query": "submarine sonar calibration", "expectNone": true, "_note": "irrelevant query — top scope must return nothing (SEM_FLOOR guards it)" },
+    { "kind": "negative", "query": "quarterly tax filing in Latvia", "expectNone": true },
+
+    { "kind": "self_memory", "query": "assistant's own note about ranking quality", "expectKeywords": ["diary", "ranking"], "scope": "full", "_note": "SELF memory lives in the full-scope pool only" },
+
+    { "kind": "observation", "query": "how the user works best", "expectKeywords": ["observation", "deep work"], "scope": "full" },
+
+    { "kind": "profile_fact", "query": "where does the user live", "expectKeywords": ["Portland"], "scope": "full" },
+    { "kind": "profile_fact", "query": "what instrument are they learning", "expectKeywords": ["cello"], "scope": "full" },
+
+    { "kind": "restricted_complete", "query": "the private planning note", "expectKeywords": ["private", "draft"], "scope": "full", "_note": "RESTRICTED pool is only reachable in full scope (public surfaces gate exposure separately)" },
+
+    { "kind": "coverage", "query": "what pets does the user have", "expectAll": [["cat", "Mochi"], ["dog", "Rufus"]], "_note": "whole-picture: BOTH pets must come back, not just the top-ranked one" },
+    { "kind": "coverage", "query": "the user's hobbies", "expectAll": [["climbing", "bouldering"], ["cello"], ["sci-fi", "reading"]] }
+  ]
+}

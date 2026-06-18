@@ -25,3 +25,8 @@ persona.md
 AGENTS.md
 !config.example.yaml
 !persona.example.md
+
+# ── 用户自己标注的 eval 数据集 — 不进仓 (仓里只留 *.example) ──
+# retrieval_cases.json 是你对自己的库标的真实 query/keyword,可能含私人内容。
+apps/gateway/src/eval/retrieval_cases.json
+!apps/gateway/src/eval/retrieval_cases.example.json

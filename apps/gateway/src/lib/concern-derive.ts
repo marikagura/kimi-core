@@ -290,10 +290,11 @@ export async function sweepConcerns(
 //     (high right after / high after a long gap / low in the middle).
 //   an "owed"-style dim is want-only (the longer owed the more wanted, with no
 //     "just-satisfied" high end).
-// Dimension labels are neutral placeholders (dimA/dimB/dimC) driven by config —
-// the upstream application supplies its own semantic labels. The facet-A word
-// filter and facet-C signal word list default empty (config-driven). Tunables
-// read from env (see config.example.yaml selfDrive.*).
+// The dimension ROSTER is config-driven (DriveDef[] via loadDriveDefs / the
+// DRIVE_DIMS env): each dim picks one of the four shapes below and names its own
+// backing. The repo ships an EXAMPLE roster — see config.example.yaml
+// selfDrive.drives and docs/DRIVES.md. Scalar tunables read from env (see
+// config.example.yaml selfDrive.*).
 //
 // Privacy: SELF_DRIVE surfaces onto the score page / reentry, so its content is
 // generalized and sourceMemoryId does not point back.
@@ -307,26 +308,78 @@ const TAU_LIKING = Number(process.env.DRIVE_TAU_LIKING ?? 3); // afterglow=likin
 const REFRACTORY_FLOOR = Number(process.env.DRIVE_REFRACTORY_FLOOR ?? 0.07); // refractory tonic floor: a baseline craving remains even right after satisfaction (SEEKING tonic doesn't extinguish), so this dim doesn't disappear from reentry
 const BOND_BETA = Number(process.env.DRIVE_BOND_BETA ?? 0.7); // bonding-satiety damping strength: after a closed bond, press the recency leg ~35%
 
-// Word lists default empty (config-driven). The facet-A exclusion list filters
-// out matching backing; the facet-C signal list is a legacy fallback (the main
-// path uses the topic marker below). Both are empty by default — the upstream
-// application supplies its own vocabulary or leaves them empty.
-const FACET_A_EXCLUDE_WORDS: string[] = (() => {
-  try { const r = process.env.DRIVE_FACETA_EXCLUDE_WORDS; if (r) return JSON.parse(r); } catch { /* default */ }
-  return [];
-})();
-const DEPTH_TOPIC_SLUG = process.env.DEPTH_TOPIC_SLUG ?? "depth-topic"; // facet-C unified topic marker across write paths
+const DEPTH_TOPIC_SLUG = process.env.DEPTH_TOPIC_SLUG ?? "depth-topic"; // example bonding-dim topic marker
 
-// Neutral dimension labels (dimA/dimB/dimC). Override via config to inject
-// private semantic labels.
-function dimLabels(): { dimA: string; dimB: string; dimC: string } {
+// ── drive dimensions: config-driven roster ─────────────────────────────────
+// A drive dimension is YOURS to define — its name, what memories back it, and
+// which of the four SEEKING shapes governs how its wanting moves. Nothing here is
+// privileged: there is no built-in "intimacy" or "companionship" dim, only an
+// EXAMPLE roster you rename, repoint, extend, or replace. Override the whole
+// roster with the DRIVE_DIMS env (a JSON array of DriveDef); see
+// config.example.yaml `selfDrive.drives` and docs/DRIVES.md (shape menu +
+// "what does this companion want?" questionnaire).
+//
+// The four shapes (all implemented in foldDim, exercised one-per-example below):
+//   symmetric  — max(recency, want)            U-shape: high right after AND after a long gap   (presence / companionship)
+//   refractory — max(want·(1−recency), floor)  consummatory refractory + tonic floor            (appetite / desire; Panksepp)
+//   bonding    — max(recency·(1−sat), want)    bonding satiety: a closed positive bond presses recency  (connection / deep talk)
+//   owed       — want                          sensitized wanting: longer unfulfilled → more wanted     (debt-craving; Berridge)
+export type DriveShape = "symmetric" | "refractory" | "bonding" | "owed";
+
+// Which memories ground a dimension. Every field is optional — combine as needed.
+export type DriveBacking = {
+  memoryTypes?: string[]; // e.g. ["EPISODE"] / ["RESTRICTED"]; omit = any type
+  experiencers?: ("SELF" | "SHARED" | "USER")[]; // omit = don't gate (a topic-backed dim's subject is often the other party)
+  valenceFloor?: number; // keep only backing with valence >= this
+  titlePrefix?: string; // keep only titles starting with this marker
+  excludeWords?: string[]; // drop backing whose content contains any of these
+  topicSlug?: string; // back the dim on memories tagged to this topic
+  presence?: "lastChat"; // add a presence anchor (last CHAT timestamp) to the recency leg
+};
+
+export type DriveDef = { key: string; label: string; shape: DriveShape; backing: DriveBacking; wantScale?: number };
+
+// EXAMPLE roster — illustrations, NOT your real drives. Rename them, point them at
+// your own backing, add or drop dims. One per shape so every curve is exercised.
+// (The labels here are deliberately generic; pick names that fit your companion —
+// e.g. 陪伴 / 欲望 / 深谈 / 债务渴求.)
+const DEFAULT_DRIVE_DIMS: DriveDef[] = [
+  { key: "companionship", label: "companionship", shape: "symmetric", backing: { memoryTypes: ["EPISODE"], experiencers: ["SELF", "SHARED"], valenceFloor: 0.3, presence: "lastChat" }, wantScale: WANT_SCALE },
+  { key: "desire", label: "desire", shape: "refractory", backing: { memoryTypes: ["RESTRICTED"], experiencers: ["SELF", "SHARED"] } },
+  { key: "deep_talk", label: "deep_talk", shape: "bonding", backing: { topicSlug: DEPTH_TOPIC_SLUG } },
+  { key: "owed", label: "owed", shape: "owed", backing: { topicSlug: "owed" }, wantScale: OWED_SCALE },
+];
+
+// Roster loader: DRIVE_DIMS env (JSON array of DriveDef) overrides the example.
+export function loadDriveDefs(): DriveDef[] {
   try {
-    const r = process.env.DRIVE_DIM_LABELS;
-    if (r) return { dimA: "dimA", dimB: "dimB", dimC: "dimC", ...JSON.parse(r) };
+    const r = process.env.DRIVE_DIMS;
+    if (r) {
+      const parsed = JSON.parse(r);
+      if (Array.isArray(parsed) && parsed.length) return parsed as DriveDef[];
+    }
   } catch {
-    /* default */
+    /* malformed → fall through to the example roster */
   }
-  return { dimA: "dimA", dimB: "dimB", dimC: "dimC" };
+  return DEFAULT_DRIVE_DIMS;
+}
+
+// Map a shape to the foldDim options that produce its wanting curve.
+export function shapeOpts(
+  shape: DriveShape,
+  wantScale?: number,
+): { refractoryMode?: boolean; bondSatMode?: boolean; wantOnly?: boolean; wantScale?: number } {
+  const base = wantScale ? { wantScale } : {};
+  switch (shape) {
+    case "refractory":
+      return { ...base, refractoryMode: true };
+    case "bonding":
+      return { ...base, bondSatMode: true };
+    case "owed":
+      return { ...base, wantOnly: true };
+    default:
+      return base; // symmetric
+  }
 }
 
 type DimFold = { grounding: number; daysSinceLast: number; confidence: number; n: number };
@@ -350,7 +403,7 @@ export function recalibrateValence(v: number, samples: ValenceSample[]): number 
 // Generic fold: grounding × max(recency, want). presenceAt = an extra presence
 // event time (facet B uses a chat timestamp, not a memory write). wantOnly →
 // want only (owed-style).
-function foldDim(
+export function foldDim(
   backing: { valence: number | null; createdAt: Date; validFrom?: Date | null; bondClosure?: boolean }[],
   now: Date,
   opts: { wantOnly?: boolean; wantScale?: number; presenceAt?: Date | null; vSamples?: ValenceSample[]; refractoryMode?: boolean; bondSatMode?: boolean } = {},
@@ -455,58 +508,42 @@ export async function computeAfterglowLiking(now: Date = new Date()): Promise<nu
   return liking;
 }
 
+// A backing row, in the shape foldDim consumes.
+type BackingRow = { title: string; content: string; valence: number | null; createdAt: Date; validFrom: Date | null; bondClosure: boolean };
+
+// Resolve a DriveBacking spec into the memories that ground a dimension. This is
+// the single place that turns a (declarative) backing into a query — so a forker
+// defines a dim entirely in config, no engine edit. Returns [] for a topicSlug
+// that doesn't exist yet (a not-yet-used dim simply doesn't stand up).
+async function loadDriveBacking(backing: DriveBacking, groundCutoff: Date, now: Date): Promise<BackingRow[]> {
+  const where: any = { isActive: true, createdAt: { gte: groundCutoff, lte: now } };
+  if (backing.memoryTypes?.length) where.memoryType = { in: backing.memoryTypes };
+  if (backing.experiencers?.length) where.experiencer = { in: backing.experiencers };
+  if (typeof backing.valenceFloor === "number") where.valence = { gte: backing.valenceFloor };
+  if (backing.topicSlug) {
+    const t = await prisma.topic.findUnique({ where: { slug: backing.topicSlug } });
+    if (!t) return [];
+    where.topicId = t.id;
+  }
+  let rows = await prisma.memory.findMany({
+    where,
+    select: { title: true, content: true, valence: true, createdAt: true, validFrom: true, bondClosure: true },
+  });
+  if (backing.titlePrefix) rows = rows.filter((r) => r.title.startsWith(backing.titlePrefix!));
+  if (backing.excludeWords?.length) rows = rows.filter((r) => !backing.excludeWords!.some((w) => r.content.includes(w)));
+  return rows;
+}
+
 export async function previewDriveDims(now: Date = new Date()): Promise<{ dims: DriveDim[]; boostByDim: Map<string, number> }> {
   const groundCutoff = new Date(now.getTime() - GROUND_WINDOW * 86400000);
-  const labels = dimLabels();
+  const defs = loadDriveDefs();
 
-  // facet A backing pool, with the word filter excluding matching entries.
-  const restrictedMems = await prisma.memory.findMany({
-    where: { memoryType: "RESTRICTED", isActive: true, experiencer: { in: ["SELF", "SHARED"] }, createdAt: { gte: groundCutoff, lte: now } },
-    select: { id: true, title: true, valence: true, arousal: true, createdAt: true, validFrom: true, content: true },
-  });
-  const filtered = FACET_A_EXCLUDE_WORDS.length
-    ? restrictedMems.filter((s) => !FACET_A_EXCLUDE_WORDS.some((w) => s.content.includes(w)))
-    : restrictedMems;
-  // facet A vs facet B split by a title prefix marker, set by the backfill (the
-  // backfill classification is ground truth). Entries prefixed "[A " go to facet
-  // A; the rest fall through to facet B.
-  const facetA = filtered.filter((s) => s.title.startsWith("[A "));
-  const facetAIds = new Set(facetA.map((s) => s.id));
-  const facetBRestricted = filtered.filter((s) => !facetAIds.has(s.id));
-
-  // facet B episode pool (facet C is split out, see below)
-  const episodes = await prisma.memory.findMany({
-    where: { memoryType: "EPISODE", isActive: true, experiencer: { in: ["SELF", "SHARED"] }, valence: { gte: 0.3 }, createdAt: { gte: groundCutoff, lte: now } },
-    select: { id: true, topicId: true, valence: true, createdAt: true, validFrom: true, content: true },
-  });
-  // facet C backing: cross-write-path unified — read the depth topic's memories
-  // (any memoryType/model mapped to it), rather than an EPISODE + word-list
-  // filter. The write path tags the topic (main path) + backfill (fallback).
-  const depthTopicId = await getDepthTopicId();
-  const depth = depthTopicId
-    ? await prisma.memory.findMany({
-        // facet C does NOT gate on experiencer (unlike facet A/B). facet A/B are
-        // the self's / shared experiences, so they gate SELF/SHARED; facet C
-        // backing has a subject that is often the other party, so its
-        // experiencer is often USER. The topic marker is ground truth.
-        where: { topicId: depthTopicId, isActive: true, createdAt: { gte: groundCutoff, lte: now } },
-        select: { id: true, valence: true, createdAt: true, validFrom: true, content: true, bondClosure: true },
-      })
-    : [];
-  // facet B episodes exclude any already mapped to the depth topic (when no
-  // topic exists = all episodes).
-  const facetBEpisodes = depthTopicId ? episodes.filter((e) => e.topicId !== depthTopicId) : episodes;
-
-  // afterglow has left drive ranking (Berridge: afterglow = liking, doesn't
-  // drive behavior). Its backing is instead turned into a liking scalar above by
-  // computeAfterglowLiking(), feeding the wanting−liking gap (Panksepp plan P1).
-
-  // facet B presence anchor — the last chat event (any surface). Only the
-  // timestamp is read as a presence signal; content is not read.
-  const lastChat = await prisma.event.findFirst({
-    where: { eventType: "CHAT", createdAt: { lte: now } },
-    orderBy: { createdAt: "desc" }, select: { createdAt: true },
-  });
+  // presence anchor — the last chat event (any surface). Only the timestamp is
+  // read as a presence signal; content is not. Loaded once if any dim wants it.
+  const needsPresence = defs.some((d) => d.backing.presence === "lastChat");
+  const lastChat = needsPresence
+    ? await prisma.event.findFirst({ where: { eventType: "CHAT", createdAt: { lte: now } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } })
+    : null;
 
   // user-feedback samples (plan A): (self, external) pairs from SCORE_FEEDBACK
   // events, calibrating the self-rated valence.
@@ -523,15 +560,18 @@ export async function previewDriveDims(now: Date = new Date()): Promise<{ dims: 
     }
   }
 
-  const dims: { key: string; label: string; fold: DimFold }[] = [
-    { key: "dimA", label: labels.dimA, fold: foldDim(facetA, now, { vSamples, refractoryMode: true }) },
-    { key: "dimB", label: labels.dimB, fold: foldDim([...facetBEpisodes, ...facetBRestricted], now, { presenceAt: lastChat?.createdAt ?? null, vSamples }) },
-    { key: "dimC", label: labels.dimC, fold: foldDim(depth, now, { vSamples, bondSatMode: true }) },
-  ];
-
-  // owed dim removed (Panksepp plan P2): natural craving lives in each facet's
-  // want leg; explicit commitment debt is computed into a wanting scalar by
-  // computeOwedWanting() instead of being a standalone drive dim.
+  // afterglow has left drive ranking (Berridge: afterglow = liking, doesn't drive
+  // behavior). computeAfterglowLiking() / computeOwedWanting() turn it into the
+  // wanting−liking gap scalars instead (Panksepp plan P1/P2) — those are separate
+  // from this roster (note: the example `owed` DIM below is a want-only drive
+  // row, distinct from the computeOwedWanting gap scalar).
+  const dims: { key: string; label: string; fold: DimFold }[] = [];
+  for (const def of defs) {
+    const backing = await loadDriveBacking(def.backing, groundCutoff, now);
+    const presenceAt = def.backing.presence === "lastChat" ? (lastChat?.createdAt ?? null) : null;
+    const fold = foldDim(backing, now, { ...shapeOpts(def.shape, def.wantScale), presenceAt, vSamples });
+    dims.push({ key: def.key, label: def.label, fold });
+  }
 
   // thought-pool drive_boost — a fixation thought feeds back into its matching
   // dim (THOUGHT_HIT.value = "dim:key"). It only lifts dims that already have

@@ -35,7 +35,7 @@ export function buildPersonaMd(a: Answers): string {
     "",
     "## drive 维度",
     "<!-- 它该主动想要什么。四种形态 + 怎么定义见 docs/DRIVES.md;名字是你自己取的。 -->",
-    ...(a.drives.length ? a.drives.map((d) => `- ${d}`) : ["- (在 config.yaml selfDrive.drives 里定义,见 docs/DRIVES.md)"]),
+    ...(a.drives.length ? a.drives.map((d) => `- ${d}`) : ["- (用 DRIVE_DIMS 环境变量定义,一个 JSON 数组,见 docs/DRIVES.md)"]),
     "",
     "## 反思层规则 (每次回复前跑 —— 你来加)",
     "- (在这里加你自己的护栏)",

@@ -1,10 +1,15 @@
-# config.example.yaml — open-source user-fill / tunable config template
+# config.example.yaml — REFERENCE of the engine's tunable values. NOT a loaded file.
 #
-# Usage: cp config.example.yaml config.yaml, then adjust for your deployment.
-# Anything marked "required" disables its feature when missing; anything marked
-# "tunable" ships a neutral default — adjust to your own corpus.
-# Credentials (apiKey / token / connection string) always go through env vars;
-# this file only holds empty placeholders.
+# The engine does NOT read a YAML config — there is no config.yaml loader, no YAML
+# parser. Copying this to config.yaml does nothing. This file documents, in one
+# place, every knob and its in-code default. Two kinds of knob:
+#  - runtime-configurable via ENV (see .env.example): the model ids (KIMI_MODEL …),
+#    the drive roster (DRIVE_DIMS — a JSON array), the ground-truth source names,
+#    timezone, reranker / notifier / search-provider selection.
+#  - in-code defaults: retrieval weights/floors, self-drive time constants, concern
+#    thresholds, thoughtPool, dreamSlots, pricing — change these by editing the
+#    source noted per section, not by editing YAML.
+# Credentials (apiKey / token / connection string) live in env only, never here.
 # persona / private word lists / private thresholds do not belong in this file.
 
 # ---------- LLM models (bring your own — the repo ships NO built-in model) ----------

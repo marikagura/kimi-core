@@ -130,7 +130,7 @@ async function main(): Promise<void> {
     "## drive 维度",
     "它该主动「想要」什么?(陪伴 / 欲望 / 深谈 / 债务渴求… 名字你自己取)",
     "每个维度对应四种形态之一(对称 / 不应期 / 结合满足 / 敏化渴求)—— 形态菜单和怎么定义见 docs/DRIVES.md。",
-    "这里先给名字,具体 backing + 形态在 config.yaml selfDrive.drives 里配。",
+    "这里先给名字,具体 backing + 形态用 DRIVE_DIMS 环境变量配(一个 JSON 数组,形状见 docs/DRIVES.md)。",
   );
   const drives = (await ask("逗号分隔列几个(留空 = 之后在 config 里定)。"))
     .split(",")

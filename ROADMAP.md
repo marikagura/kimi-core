@@ -7,7 +7,7 @@
 ## 已经在 core 里(落地、有测试、有文档)
 
 - **Hybrid retrieval** —— dense(pgvector)+ lexical(trigram / 可选 BM25)+ 时间衰减 + 重要度,四信号加权(entity-mention 是关键词臂加成 + 过滤旁路,单跳;多跳 `graph_walk` 是独立工具)+ 可选 cross-encoder rerank(带隐私门控)。
-- **self-drive + concern 引擎** —— 四种 SEEKING 形态、**config 驱动的维度**(你自己定义,见 [docs/DRIVES.md](./docs/DRIVES.md))、concern 的 open / decay / recurrence / grounding。
+- **self-drive + concern 引擎** —— 四种 SEEKING 形态、**维度自定义**(用 `DRIVE_DIMS` 环境变量,见 [docs/DRIVES.md](./docs/DRIVES.md))、concern 的 open / decay / recurrence / grounding。
 - **可复现 eval** —— hit@5 / hit@10 · MRR · nDCG@10 · set-recall@10 · expectNone 负控 · 组件 / rerank A/B · 每跑写趋势 Event(`npm run eval` / `npm run eval:history`)。
 - **autonomous wake daemon** —— cron wake → drive / concern / persona → action selection(DO_NOTHING 是一个选项)→ dispatch,带 HITL propose / auto 旋钮(`daemon.ts` + `intel.ts`,论证见 [docs/AUTONOMY.md](./docs/AUTONOMY.md))。
 - **对话式 onboarding** —— `npm run init` 是一段对话:访谈你,用你自己的话长出 persona / AGENTS.md 的关系层(从不替你写);有 key 时加自适应追问、无 key 是引导式对话(`scripts/init.ts` + `persona-build.ts`)。

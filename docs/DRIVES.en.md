@@ -49,11 +49,12 @@ the more wanted" → `owed`; "high at both ends" → `symmetric`.
 
 ---
 
-## Step 3: write it into config
+## Step 3: set DRIVE_DIMS
 
-List your dimensions under `selfDrive.drives` in `config.yaml` (or override the
-whole roster with the `DRIVE_DIMS` env — a JSON array of the same shape). Each
-dimension:
+List your dimensions in the `DRIVE_DIMS` env — a JSON array (unset falls back to
+the in-code example roster `DEFAULT_DRIVE_DIMS`). The shape of each dimension is
+below (`DRIVE_DIMS` is a JSON array of these fields; there is no `config.yaml` —
+the engine does not read YAML):
 
 ```yaml
 selfDrive:

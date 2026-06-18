@@ -6,7 +6,7 @@
 
 ## 1. retrieval eval（真实输出）
 
-`npm run eval` 拿 `apps/gateway/src/eval/retrieval_cases.example.json`（一份虚构标注集）跑同一个 `scoreMemories`——memory_search 用的同一个打分器。下面是一次**真实运行**，故意**没配 embedding key**（`OPENAI_API_KEY`），所以只有 keyword / trigram 这条臂在工作：
+`npm run eval` 拿 `apps/gateway/src/eval/retrieval_cases.example.json`（一份虚构标注集）跑同一个 `scoreMemories`——memory_search 用的同一个打分器。下面是一次**真实运行**，故意**没配 embedding 端点**（`EMBED_*` 未设），所以只有 keyword / trigram 这条臂在工作：
 
 ```
 ## by kind
@@ -21,7 +21,7 @@
 ## coverage   n=2   set-recall@10=17%
 ```
 
-**这张表本身就在示范 eval 是干嘛的**：literal / 关键词 / 时间类全中（trigram 臂够用），但 `abstract_core`、`fuzzy_semantic`、`semantic_bridge` 全 0——因为这些是**纯语义**的 case，没有 embedding 抓不到。把 `OPENAI_API_KEY` 配上再跑，这几类会回来。`negative`（expectNone）始终通过：无关 query 返回空。
+**这张表本身就在示范 eval 是干嘛的**：literal / 关键词 / 时间类全中（trigram 臂够用），但 `abstract_core`、`fuzzy_semantic`、`semantic_bridge` 全 0——因为这些是**纯语义**的 case，没有 embedding 抓不到。把 `EMBED_BASE_URL` + `EMBED_API_KEY` + `EMBED_MODEL` 配上再跑，这几类会回来。`negative`（expectNone）始终通过：无关 query 返回空。
 
 换句话说：数字会**显示哪条臂没接上**——这些数字可以自己重跑得到。`npm run eval:history` 把每次的趋势读回来。
 

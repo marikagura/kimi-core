@@ -8,19 +8,18 @@ import { embedText, embedAndStore, writeEmbedding, STALE_EMBEDDING_WHERE } from 
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
-import { roleModel } from "./lib/models.js";
+import { roleModel, llmBaseUrl, llmApiKey } from "./lib/models.js";
 import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
 import { firstJsonObject } from "./lib/json-extract.js";
 
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY!;
 // No built-in model — every model is the deployer's own (KIMI_MODEL, with optional
 // per-role overrides INTEL_MODEL / INTEL_DIGEST_MODEL / INTEL_SWEEP_MODEL /
 // INTEL_SCORE_AUTHOR_MODEL). Resolved at use via roleModel(); unset → clear error.
 
-// Optional OpenRouter provider routing preference. Comma-separated provider names
-// in OPENROUTER_PROVIDER_ORDER pin the routing order; unset → no explicit order,
-// only allow_fallbacks (OpenRouter picks).
-const PROVIDER_ORDER = (process.env.OPENROUTER_PROVIDER_ORDER || "")
+// Optional OpenRouter-style provider routing. Comma-separated provider names in
+// LLM_PROVIDER_ORDER pin the routing order; sent only when set (an OpenRouter
+// extension — OpenAI-compatible endpoints that don't support it ignore the field).
+const PROVIDER_ORDER = (process.env.LLM_PROVIDER_ORDER || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -37,19 +36,18 @@ const PROVIDER_ORDER = (process.env.OPENROUTER_PROVIDER_ORDER || "")
 const CHAT_INTEL_OFF = true;
 
 async function callLLM(system: string, user: string, maxTokens = 2000, modelOverride?: string, thinkingTokens?: number) {
-  const res = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
+  const res = await fetchWithRetry(`${llmBaseUrl()}/chat/completions`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${OPENROUTER_KEY}`,
+      "Authorization": `Bearer ${llmApiKey()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model: modelOverride || roleModel("INTEL_MODEL"),
-      // Apply a provider routing preference only for Anthropic models, so passing a
-      // non-Anthropic override later does not force a provider on it. Order is taken
-      // from OPENROUTER_PROVIDER_ORDER when set; otherwise only allow_fallbacks.
-      ...((!modelOverride || modelOverride.startsWith("anthropic/")) && {
-        provider: { ...(PROVIDER_ORDER.length && { order: PROVIDER_ORDER }), allow_fallbacks: true },
+      // Optional OpenRouter-style provider routing, sent only when LLM_PROVIDER_ORDER
+      // is set. Other OpenAI-compatible endpoints ignore an unknown `provider` field.
+      ...(PROVIDER_ORDER.length && {
+        provider: { order: PROVIDER_ORDER, allow_fallbacks: true },
       }),
       // Extended thinking (used by self-sweep). thinkingTokens must be < maxTokens
       // (thinking counts toward total). Omitted → no thinking; existing calls unaffected.
@@ -61,6 +59,10 @@ async function callLLM(system: string, user: string, maxTokens = 2000, modelOver
       max_tokens: maxTokens,
     }),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`LLM ${res.status}: ${body.slice(0, 200)}`);
+  }
   const data = (await res.json()) as any;
   return data.choices?.[0]?.message?.content || "";
 }

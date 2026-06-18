@@ -1,6 +1,7 @@
-// OpenAI embeddings wrapper (model via EMBED_MODEL; no built-in default) plus the
-// ONE place embeddings are written to the DB. Returns null on any failure — call
-// sites gracefully fall back to keyword/trigram search.
+// Embeddings wrapper — an OpenAI-compatible /embeddings endpoint, brought by the
+// deployer (EMBED_BASE_URL + EMBED_API_KEY + EMBED_MODEL; no preset). Plus the ONE
+// place embeddings are written to the DB. Returns null on any failure — call sites
+// gracefully fall back to keyword/trigram search.
 //
 // Input truncated to 8k chars (~2k tok) as a safety cap — longer inputs cost more
 // without proportional quality gain for the memory/digest/profile use case.
@@ -8,9 +9,7 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../db.js";
 import { fetchWithRetry } from "../fetch-retry.js";
-import { embedModelOrNull } from "./models.js";
-
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
+import { embedModelOrNull, embedBaseUrlOrNull, embedApiKeyOrNull } from "./models.js";
 
 // The embedding dimension the DB vector columns are declared with (vector(1536) in
 // schema.prisma + the 0_init migration). EMBED_MODEL MUST produce this many dims;
@@ -19,17 +18,19 @@ export const EMBED_DIM = 1536;
 
 export async function embedText(text: string): Promise<number[] | null> {
   const model = embedModelOrNull();
-  if (!OPENAI_KEY || !model) {
-    console.warn("[embed] OPENAI_API_KEY or EMBED_MODEL not set — skipping (no semantic arm)");
+  const base = embedBaseUrlOrNull();
+  const key = embedApiKeyOrNull();
+  if (!model || !base || !key) {
+    console.warn("[embed] EMBED_MODEL / EMBED_BASE_URL / EMBED_API_KEY not all set — skipping (no semantic arm)");
     return null;
   }
   if (!text || text.trim().length === 0) return null;
 
   try {
-    const res = await fetchWithRetry("https://api.openai.com/v1/embeddings", {
+    const res = await fetchWithRetry(`${base}/embeddings`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_KEY}`,
+        "Authorization": `Bearer ${key}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

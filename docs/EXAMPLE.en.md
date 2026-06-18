@@ -6,7 +6,7 @@ Want to see it alive without installing? Here's real, re-runnable output. All ex
 
 ## 1. retrieval eval (real output)
 
-`npm run eval` runs `apps/gateway/src/eval/retrieval_cases.example.json` (a fictional labeled set) through the same `scoreMemories` that `memory_search` uses. Below is a **real run**, deliberately **with no embedding key** (`OPENAI_API_KEY`), so only the keyword / trigram arm is working:
+`npm run eval` runs `apps/gateway/src/eval/retrieval_cases.example.json` (a fictional labeled set) through the same `scoreMemories` that `memory_search` uses. Below is a **real run**, deliberately **with no embeddings endpoint configured** (`EMBED_*` unset), so only the keyword / trigram arm is working:
 
 ```
 ## by kind
@@ -21,7 +21,7 @@ Want to see it alive without installing? Here's real, re-runnable output. All ex
 ## coverage   n=2   set-recall@10=17%
 ```
 
-**This table is itself a demo of what the eval is for**: literal / keyword / temporal all hit (the trigram arm suffices), but `abstract_core`, `fuzzy_semantic`, `semantic_bridge` are all 0 — those are **pure-semantic** cases that nothing catches without embeddings. Set `OPENAI_API_KEY` and re-run and they come back. `negative` (expectNone) always passes: an irrelevant query returns nothing.
+**This table is itself a demo of what the eval is for**: literal / keyword / temporal all hit (the trigram arm suffices), but `abstract_core`, `fuzzy_semantic`, `semantic_bridge` are all 0 — those are **pure-semantic** cases that nothing catches without embeddings. Set `EMBED_BASE_URL` + `EMBED_API_KEY` + `EMBED_MODEL` and re-run and they come back. `negative` (expectNone) always passes: an irrelevant query returns nothing.
 
 In other words: the numbers **honestly tell you which arm isn't wired** — that's what "numbers you can re-run" means. `npm run eval:history` reads the trend back over time.
 

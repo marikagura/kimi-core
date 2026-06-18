@@ -46,8 +46,8 @@ npm install
 docker compose up -d          # local Postgres + pgvector — or point DATABASE_URL at your own DB
 npm run init                  # conversational onboarding — generates .env (with a fresh KIMI_API_KEY) + persona.md + AGENTS.md
                               # (prefer to do it by hand? cp .env.example .env and fill it instead)
-# now open .env: set KIMI_MODEL (your own model — the repo ships none) + OPENROUTER_API_KEY;
-# OPENAI_API_KEY + EMBED_MODEL enable semantic search
+# now open .env: set your LLM endpoint (LLM_BASE_URL + LLM_API_KEY) + KIMI_MODEL — the repo presets none;
+# EMBED_BASE_URL + EMBED_API_KEY + EMBED_MODEL enable semantic search
 npm run db:migrate:deploy
 npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 ```
@@ -56,10 +56,12 @@ npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 lists. You bring your own — `npm run init` walks you through building it. The engine ships empty on
 purpose; with no persona content shipped, there is nothing to de-identify.
 
-**No model ships either.** kimi-core has no built-in model — set `KIMI_MODEL` (an OpenRouter slug) for
-LLM calls, `EMBED_MODEL` for semantic search, and `DAEMON_MODEL` (a bare Claude id) only if you run the
-daemon. `npm run init` asks for them; unset, the engine fails closed with a clear message rather than
-silently running on a model you never chose.
+**No model — and no provider — ships either.** kimi-core presets neither: set your LLM endpoint with
+`LLM_BASE_URL` + `LLM_API_KEY` (any OpenAI-compatible endpoint — OpenRouter, OpenAI, a local vLLM /
+Ollama, …) and a `KIMI_MODEL` (a model id that endpoint accepts); `EMBED_BASE_URL` + `EMBED_API_KEY` +
+`EMBED_MODEL` for semantic search; `DAEMON_MODEL` (a bare Claude id) only if you run the daemon.
+`npm run init` asks for them; unset, the engine fails closed with a clear message rather than silently
+running on an endpoint or model you never chose.
 
 ## Running the autonomous daemon (optional)
 
@@ -74,7 +76,7 @@ npm run daemon          # runs continuously on a cron (use pm2 etc. in productio
 npm run daemon:wake     # fire a single wake right now — to verify
 ```
 
-**The daemon uses the Claude Agent SDK**, so it needs a Claude (Anthropic) subscription token: generate one with `claude setup-token` and put it in `.env` as `CLAUDE_CODE_OAUTH_TOKEN`. The rest of the engine is provider-agnostic (LLM via OpenRouter, embeddings via OpenAI — both swappable); **only this autonomous wake loop is Claude-bound**. Using a different agent runtime? Swap the daemon layer; the engine doesn't change.
+**The daemon uses the Claude Agent SDK**, so it needs a Claude (Anthropic) subscription token: generate one with `claude setup-token` and put it in `.env` as `CLAUDE_CODE_OAUTH_TOKEN`. The rest of the engine is provider-agnostic (LLM and embeddings go to any OpenAI-compatible endpoints you configure via `LLM_BASE_URL` / `EMBED_BASE_URL`); **only this autonomous wake loop is Claude-bound**. Using a different agent runtime? Swap the daemon layer; the engine doesn't change.
 
 > Honest note: the author verified the engine + eval end-to-end; the full daemon wake loop (transport / model / scripts are now aligned) is yours to confirm once on your own machine with your token.
 
@@ -88,7 +90,7 @@ One `DATABASE_URL`, three ways to run it — same code, no extra backend:
 
 All three above (Supabase included) work today. A zero-dependency SQLite "lite" backend is a **non-goal** (these three cover the personal 1:1 case; rationale in the [ROADMAP](./ROADMAP.en.md)).
 
-**Privacy boundary, stated plainly:** in local mode your **storage** (Postgres) never leaves the machine, but embeddings are sent to OpenAI and LLM calls to OpenRouter — so the memory text that gets embedded / reasoned over does go to third-party APIs. "Data never leaves" refers to the storage layer only. For fully-local, point the embedding / LLM endpoints at your own self-hosted ones.
+**Privacy boundary, stated plainly:** in local mode your **storage** (Postgres) never leaves the machine, but embeddings and LLM calls go to whatever endpoints you configure (`LLM_BASE_URL` / `EMBED_BASE_URL`) — so the memory text that gets embedded / reasoned over does go to those APIs. "Data never leaves" refers to the storage layer only. For fully-local, point the embedding / LLM endpoints at your own self-hosted ones.
 
 ## Pairs with AGENTS.md
 

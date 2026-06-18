@@ -43,3 +43,37 @@ export function roleModel(roleEnvVar: string): string {
 export function embedModelOrNull(): string | null {
   return process.env.EMBED_MODEL?.trim() || null;
 }
+
+// Generic required-env reader for the provider endpoints below.
+function requireEnv(name: string, hint: string): string {
+  const v = process.env[name]?.trim();
+  if (!v) {
+    throw new Error(`${name} is not set. kimi-core presets no provider — set ${name} (${hint}). See .env.example.`);
+  }
+  return v;
+}
+
+// LLM provider — an OpenAI-compatible chat-completions endpoint, brought by the
+// deployer. No preset: works with any endpoint that speaks the OpenAI
+// /chat/completions shape (OpenRouter, OpenAI, Together, Groq, a local vLLM /
+// Ollama, …). The code appends "/chat/completions" to LLM_BASE_URL.
+export function llmBaseUrl(): string {
+  return requireEnv(
+    "LLM_BASE_URL",
+    'an OpenAI-compatible base, e.g. "https://api.openai.com/v1" / "https://openrouter.ai/api/v1" / "http://localhost:11434/v1"',
+  ).replace(/\/+$/, "");
+}
+export function llmApiKey(): string {
+  return requireEnv("LLM_API_KEY", "your LLM provider's API key");
+}
+
+// Embeddings provider — an OpenAI-compatible /embeddings endpoint. Optional: unset
+// base/key = no semantic arm (same graceful path as EMBED_MODEL). Returns null when
+// unset; the code appends "/embeddings" to EMBED_BASE_URL.
+export function embedBaseUrlOrNull(): string | null {
+  const v = process.env.EMBED_BASE_URL?.trim();
+  return v ? v.replace(/\/+$/, "") : null;
+}
+export function embedApiKeyOrNull(): string | null {
+  return process.env.EMBED_API_KEY?.trim() || null;
+}

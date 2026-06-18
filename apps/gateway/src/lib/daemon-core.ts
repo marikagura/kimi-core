@@ -20,7 +20,7 @@ import { CHAT_SOURCE, CROSS_CHAT_SOURCE, HOOK_SOURCE, LOOP_SOURCE, COMMIT_SOURCE
 // Clear API-key env vars that would shadow the subscription token, forcing the
 // SDK to authenticate via CLAUDE_CODE_OAUTH_TOKEN (subscription plan limit).
 export function ensureSubscriptionAuth() {
-  for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENROUTER_API_KEY"]) {
+  for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) {
     if (process.env[k]) {
       delete process.env[k];
       console.warn(`[daemon-core] removed ${k} (would shadow subscription auth)`);

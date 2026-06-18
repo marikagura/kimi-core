@@ -13,8 +13,9 @@ import prisma from "../db.js";
 import { callLLMShort } from "./llm.js";
 import { roleModel } from "./models.js";
 
-// Topic slug used to mark depth memories across all write paths. Tunable.
-const DEPTH_TOPIC_SLUG = process.env.DEPTH_TOPIC_SLUG ?? "depth-topic";
+// Topic slug used to mark depth memories across all write paths. Tunable. Exported
+// as the single definition — concern-derive's bonding-dim backing imports it.
+export const DEPTH_TOPIC_SLUG = process.env.DEPTH_TOPIC_SLUG ?? "depth-topic";
 // Judge model: DEPTH_JUDGE_MODEL env, else the shared KIMI_MODEL. No built-in default.
 
 // One-line version — embedded into another prompt (the digest's existing

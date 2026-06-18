@@ -9,7 +9,7 @@ import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
 import { roleModel } from "./lib/models.js";
-import { CHAT_SOURCE } from "@kimi/context-core";
+import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY!;
 // No built-in model — every model is the deployer's own (KIMI_MODEL, with optional
@@ -140,10 +140,8 @@ async function extractFromChat(since: Date, existingTitles: string) {
   if (chats.length < 4) return 0;
 
   const conversation = chats.map((c: any) => {
-    try {
-      const d = JSON.parse(c.value || "{}");
-      return `[${d.role}] ${d.text}`;
-    } catch { return ""; }
+    const p = parseChatEvent(c.value);
+    return p ? `[${p.role}] ${p.text}` : "";
   }).filter(Boolean).join("\n");
 
   const system = `You are the intelligence layer. Extract memory candidates from the chat conversation between the user and the assistant.
@@ -373,12 +371,9 @@ export async function scanDialogueDigests(
     for (let i = 0; i < dayEvents.length; i++) {
       const e = dayEvents[i];
       const t = localDateTime(e.createdAt).slice(11, 16);
-      try {
-        const d = JSON.parse(e.value || "{}");
-        if (!d.text) continue;
-        const text = String(d.text);
-        parsed.push({ idx: parsed.length, line: `[${t}] ${d.role}: ${text}`, event: e });
-      } catch { /* skip malformed */ }
+      const p = parseChatEvent(e.value);
+      if (!p) continue;
+      parsed.push({ idx: parsed.length, line: `[${t}] ${p.role}: ${p.text}`, event: e });
     }
     if (parsed.length < MIN_TURNS) { skipped++; continue; }
 
@@ -391,7 +386,7 @@ export async function scanDialogueDigests(
     // "[digest failed") is not counted as complete — delete it so this round can
     // regenerate, otherwise a failed day stays stuck forever.
     const existing = await prisma.memory.findFirst({
-      where: { memoryType: "EPISODE", sourceType: "CHAT", experiencer: "SHARED", title: { startsWith: titlePrefix } },
+      where: { ...CHAT_DIGEST_WHERE, title: { startsWith: titlePrefix } },
       select: { id: true, summary: true },
     });
     if (existing) {
@@ -471,9 +466,7 @@ Output JSON (JSON only, no markdown fence):
       const lastEvent = parsed[parsed.length - 1].event;
       const digestMem = await prisma.memory.create({
         data: {
-          memoryType: "EPISODE",
-          sourceType: "CHAT",
-          experiencer: "SHARED",
+          ...CHAT_DIGEST_WHERE,
           title: titlePrefix,
           content: dContent,
           summary: dSummary,

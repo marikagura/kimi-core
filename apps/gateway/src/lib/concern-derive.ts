@@ -321,7 +321,7 @@ const TAU_LIKING = Number(process.env.DRIVE_TAU_LIKING ?? 3); // afterglow=likin
 const REFRACTORY_FLOOR = Number(process.env.DRIVE_REFRACTORY_FLOOR ?? 0.07); // refractory tonic floor: a baseline craving remains even right after satisfaction (SEEKING tonic doesn't extinguish), so this dim doesn't disappear from reentry
 const BOND_BETA = Number(process.env.DRIVE_BOND_BETA ?? 0.7); // bonding-satiety damping strength: after a closed bond, press the recency leg ~35%
 
-const DEPTH_TOPIC_SLUG = process.env.DEPTH_TOPIC_SLUG ?? "depth-topic"; // example bonding-dim topic marker
+import { DEPTH_TOPIC_SLUG } from "./depth-judge.js"; // example bonding-dim topic marker — one definition, shared with the judge
 
 // ── drive dimensions: config-driven roster ─────────────────────────────────
 // A drive dimension is YOURS to define — its name, what memories back it, and

@@ -15,7 +15,7 @@
 import "dotenv/config";
 import prisma from "../db.js";
 import { localDate, localDateTime } from "../time.js";
-import { CHAT_SOURCE, CROSS_CHAT_SOURCE, HOOK_SOURCE, LOOP_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE } from "@kimi/context-core";
+import { CHAT_SOURCE, CROSS_CHAT_SOURCE, HOOK_SOURCE, LOOP_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE, parseChatEvent } from "@kimi/context-core";
 
 // Clear API-key env vars that would shadow the subscription token, forcing the
 // SDK to authenticate via CLAUDE_CODE_OAUTH_TOKEN (subscription plan limit).
@@ -149,9 +149,10 @@ export async function buildGroundTruth(now: Date): Promise<string> {
   // surface. Open-source ground truth injects activity signals only — message
   // text is summarized to a short prefix, never expanded with private content.
   const renderChat = (m: any, tag: string) => {
-    let text = "", who = "user";
-    try { const v = JSON.parse(m.value || "{}"); text = v.text || ""; who = v.role === "assistant" ? "self" : "user"; }
-    catch { text = m.value || ""; }
+    const p = parseChatEvent(m.value);
+    // Fall back to the raw value as text if it isn't the {role,text} JSON shape.
+    const text = p?.text ?? (m.value || "");
+    const who = p?.who ?? "user";
     // Strip inline timestamp blocks ([... HH:MM]) that get embedded in message text.
     const norm = text.replace(/\[[^\]]*?\d{1,2}[:.]\d{2}[^\]]*?\]/g, "").replace(/\s+/g, " ").trim();
     // Pin each line with its own event time. The normalizer above strips any inline

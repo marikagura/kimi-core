@@ -21,7 +21,7 @@
 
 import type { PrismaClient } from "@prisma/client";
 import { localDateTime } from "./time.js";
-import { CHAT_SOURCE, CROSS_CHAT_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE } from "./sources.js";
+import { CHAT_SOURCE, CROSS_CHAT_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE, CHAT_DIGEST_WHERE, parseChatEvent } from "./sources.js";
 
 // Re-export the shared source / event-identity constants so the gateway imports
 // them from "@kimi/context-core" rather than re-deriving (and drifting from) them.
@@ -294,7 +294,7 @@ export async function loadEntities(prisma: PrismaClient): Promise<EntityLayer> {
 export interface DigestItem { title: string; content: string }
 export async function loadDigests(prisma: PrismaClient): Promise<DigestItem[]> {
   return prisma.memory.findMany({
-    where: { isActive: true, memoryType: "EPISODE", sourceType: "CHAT", experiencer: "SHARED" },
+    where: { isActive: true, ...CHAT_DIGEST_WHERE },
     orderBy: { digestTimeEnd: "desc" },
     take: 10,
     select: { title: true, content: true },
@@ -356,13 +356,9 @@ export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: 
   ]);
   const parse = (rows: { value: string | null; createdAt: Date }[], surface: "tg" | "chat"): MergedChatMsg[] =>
     rows.flatMap((r) => {
-      try {
-        const o = JSON.parse(r.value || "{}");
-        if (!o.text) return [];
-        return [{ role: (o.role === "assistant" ? "assistant" : "user") as "user" | "assistant", text: String(o.text), surface, at: r.createdAt }];
-      } catch {
-        return [];
-      }
+      const p = parseChatEvent(r.value);
+      if (!p) return [];
+      return [{ role: p.role, text: p.text, surface, at: r.createdAt }];
     });
   const merged = [...parse(tg, "tg"), ...parse(web, "chat")].sort((a, b) => a.at.getTime() - b.at.getTime());
   return sinceTs ? merged : merged.slice(-take);

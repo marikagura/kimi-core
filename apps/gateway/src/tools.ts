@@ -18,6 +18,7 @@ import prisma from "./db.js";
 import { localDateTime, localDate } from "./time.js";
 import { embedText, embedAndStore, writeEmbedding } from "./lib/embed.js";
 import { findSimilarMemories } from "./lib/memory-similarity.js";
+import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED } from "@kimi/context-core";
 import { scoreMemories } from "./lib/retrieval.js";
 import { sweepMemoryMentions } from "./lib/entity-mentions.js";
 import { walkGraph } from "./lib/graph-walk.js";
@@ -929,7 +930,7 @@ export function registerAllTools(server: McpServer) {
           memoryType: "EPISODE",
           importance: { gte: 4 },
           // CHAT+SHARED go through the digests section below; exclude here to avoid duplication.
-          NOT: { AND: [{ sourceType: "CHAT" }, { experiencer: "SHARED" }] },
+          NOT: { ...CHAT_DIGEST_SHARED },
         },
         orderBy: [{ importance: "desc" }, { createdAt: "desc" }],
         take: 20,
@@ -945,12 +946,7 @@ export function registerAllTools(server: McpServer) {
       // digest layer is produced sanitized; the cold-start content filter is a
       // second layer on top (externalized, ships neutral).
       const digests = (await prisma.memory.findMany({
-        where: {
-          isActive: true,
-          memoryType: "EPISODE",
-          sourceType: "CHAT",
-          experiencer: "SHARED",
-        },
+        where: { isActive: true, ...CHAT_DIGEST_WHERE },
         orderBy: { createdAt: "desc" },
         take: 15,
       })).filter((d: any) => !isColdStartExcluded(d.title, `${d.title ?? ""} ${d.summary ?? ""} ${d.content ?? ""}`)).slice(0, 10);
@@ -1149,7 +1145,7 @@ export function registerAllTools(server: McpServer) {
           isActive: true,
           memoryType: "EPISODE",
           importance: { gte: 4 },
-          NOT: { AND: [{ sourceType: "CHAT" }, { experiencer: "SHARED" }] },
+          NOT: { ...CHAT_DIGEST_SHARED },
           ...recent,
         },
         orderBy: { createdAt: "desc" },
@@ -1157,7 +1153,7 @@ export function registerAllTools(server: McpServer) {
       })).filter((m: any) => !isColdStartExcluded(m.title, `${m.title ?? ""} ${m.summary ?? ""} ${m.content ?? ""}`));
 
       const digests = (await prisma.memory.findMany({
-        where: { isActive: true, memoryType: "EPISODE", sourceType: "CHAT", experiencer: "SHARED", ...recent },
+        where: { isActive: true, ...CHAT_DIGEST_WHERE, ...recent },
         orderBy: { createdAt: "desc" },
         take: 30,
       })).filter((m: any) => !isColdStartExcluded(m.title, `${m.title ?? ""} ${m.summary ?? ""} ${m.content ?? ""}`));

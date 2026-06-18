@@ -16,7 +16,10 @@ export const COMMIT_EVENT_TYPE = "MANUAL_NOTE" as const;
 
 // A digested chat session is identified as EPISODE + CHAT + SHARED. One predicate
 // so the digest writer and every reader agree on what a "chat digest" row is.
-export const CHAT_DIGEST_WHERE = { memoryType: "EPISODE", sourceType: "CHAT", experiencer: "SHARED" } as const;
+// CHAT_DIGEST_SHARED is the (sourceType, experiencer) pair on its own, used both to
+// build CHAT_DIGEST_WHERE and as the `NOT:` exclusion in the generic-episode readers.
+export const CHAT_DIGEST_SHARED = { sourceType: "CHAT", experiencer: "SHARED" } as const;
+export const CHAT_DIGEST_WHERE = { memoryType: "EPISODE", ...CHAT_DIGEST_SHARED } as const;
 
 // Stored CHAT event.value shape + decode. role "assistant" ⇒ the AI ("self").
 export interface ChatEventValue { role: "user" | "assistant"; text: string }

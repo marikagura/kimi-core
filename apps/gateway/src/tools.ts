@@ -16,7 +16,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import prisma from "./db.js";
 import { localDateTime, localDate } from "./time.js";
-import { embedText, toVectorLiteral } from "./lib/embed.js";
+import { embedText, embedAndStore, writeEmbedding } from "./lib/embed.js";
+import { findSimilarMemories } from "./lib/memory-similarity.js";
 import { scoreMemories } from "./lib/retrieval.js";
 import { sweepMemoryMentions } from "./lib/entity-mentions.js";
 import { walkGraph } from "./lib/graph-walk.js";
@@ -169,21 +170,10 @@ export function registerAllTools(server: McpServer) {
       // so we UPDATE with raw SQL. Failure is tolerated — the nightly sweep
       // patches any null rows next run.
       try {
-        const embText = `${title}\n${summary || content}`;
-        const emb = await embedText(embText);
-        if (emb) {
-          const vec = toVectorLiteral(emb);
-          // Write embeddingAt too — the sweep uses it to decide whether an edited
-          // row's embedding is stale; without it the first updatedAt bump would
-          // trigger one redundant re-embed.
-          await prisma.$executeRaw`
-            UPDATE memories SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${memory.id}
-          `;
-        }
+        await embedAndStore("memories", memory.id, `${title}\n${summary || content}`);
       } catch (e: any) {
-        // Tolerated, as the comment above promises: the memory row is already
-        // saved; the nightly sweep re-embeds null rows. Don't fail the whole write
-        // on an embed / insert error (e.g. a misconfigured EMBED_MODEL dimension).
+        // Tolerated: the memory row is already saved; the nightly sweep re-embeds
+        // null rows. Don't fail the whole write on an embed / insert error.
         console.warn(`[memory_write] embedding failed (sweep will retry): ${e?.message ?? e}`);
       }
 
@@ -1380,10 +1370,7 @@ export function registerAllTools(server: McpServer) {
       // never built. The episode is a heavy retrieval target, so build both
       // here; failure swallowed, the sweep is the safety net.
       try {
-        const epEmb = await embedText(`${episode.title}\n${episodeSummary.slice(0, 300)}`);
-        if (epEmb) {
-          await prisma.$executeRaw`UPDATE memories SET embedding = ${toVectorLiteral(epEmb)}::vector, "embeddingAt" = NOW() WHERE id = ${episode.id}`;
-        }
+        await embedAndStore("memories", episode.id, `${episode.title}\n${episodeSummary.slice(0, 300)}`);
         await sweepMemoryMentions(episode.id);
       } catch (e: any) {
         console.warn("[closeout] episode embed/mention failed:", e?.message ?? e);
@@ -1546,31 +1533,20 @@ export function registerAllTools(server: McpServer) {
           const searchText = `${saved.title} ${saved.summary}`;
           const emb = await embedText(searchText);
           if (!emb) continue;
-          const vec = toVectorLiteral(emb);
-          // Write the computed embedding into the row too — previously it was
-          // computed only to build edges and then discarded, leaving the row
-          // without a vector until the nightly sweep.
-          await prisma.$executeRaw`UPDATE memories SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${saved.id}`;
-          const related: any[] = await prisma.$queryRaw`
-            SELECT id, title, (embedding <=> ${vec}::vector) AS distance
-            FROM memories
-            WHERE "isActive" = true AND embedding IS NOT NULL
-              AND id::text != ${saved.id}
-            ORDER BY embedding <=> ${vec}::vector
-            LIMIT 3
-          `;
-          for (const r of related) {
-            const conf = 1.0 - Number(r.distance);
-            if (conf < 0.3) continue;
+          // Write the embedding into the row (else it waits for the nightly sweep),
+          // then build similar-edges via the same cosine query the sweep uses.
+          await writeEmbedding("memories", saved.id, emb);
+          const sims = await findSimilarMemories(emb, saved.id);
+          for (const s of sims) {
             await prisma.link.create({
               data: {
                 fromType: "memory",
                 fromId: saved.id,
                 toType: "memory",
-                toId: r.id,
+                toId: s.id,
                 relationType: "similar",
-                confidence: Math.round(conf * 100) / 100,
-                note: `auto-linked at closeout (cosine sim ${conf.toFixed(2)})`,
+                confidence: s.confidence,
+                note: `auto-linked at closeout (cosine sim ${s.confidence.toFixed(2)})`,
               },
             });
             edgesCreated++;

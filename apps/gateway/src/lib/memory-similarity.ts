@@ -46,36 +46,44 @@ export async function sweepMemorySimilarity(memoryId: string): Promise<number> {
 
   const emb = await embedText(text);
   if (!emb) return 0;
-  const vec = toVectorLiteral(emb);
 
-  const related: { id: string; distance: number }[] = await prisma.$queryRaw`
-    SELECT id, (embedding <=> ${vec}::vector) AS distance
-    FROM memories
-    WHERE "isActive" = true
-      AND embedding IS NOT NULL
-      AND id::text != ${memoryId}
-    ORDER BY embedding <=> ${vec}::vector
-    LIMIT ${TOP_K}
-  `;
-
+  const sims = await findSimilarMemories(emb, memoryId);
   let created = 0;
-  for (const r of related) {
-    const confidence = 1.0 - Number(r.distance);
-    if (confidence < MIN_CONFIDENCE) continue;
+  for (const s of sims) {
     await prisma.link.create({
       data: {
         fromType: "memory",
         fromId: memoryId,
         toType: "memory",
-        toId: r.id,
+        toId: s.id,
         relationType: "similar",
-        confidence: Math.round(confidence * 100) / 100,
-        note: `auto-sweep cosine ${confidence.toFixed(2)}`,
+        confidence: s.confidence,
+        note: `auto-sweep cosine ${s.confidence.toFixed(2)}`,
       },
     });
     created++;
   }
   return created;
+}
+
+// Top-K nearest active memories by cosine distance, thresholded — the ONE cosine
+// query both edge-builders (this sweep + closeout) share, so K / the threshold
+// can't drift between the two creation paths. confidence = 1 - distance, rounded.
+export async function findSimilarMemories(emb: number[], excludeId: string): Promise<{ id: string; confidence: number }[]> {
+  const vec = toVectorLiteral(emb);
+  const related: { id: string; distance: number }[] = await prisma.$queryRaw`
+    SELECT id, (embedding <=> ${vec}::vector) AS distance
+    FROM memories
+    WHERE "isActive" = true
+      AND embedding IS NOT NULL
+      AND id::text != ${excludeId}
+    ORDER BY embedding <=> ${vec}::vector
+    LIMIT ${TOP_K}
+  `;
+  return related
+    .map((r) => ({ id: r.id, raw: 1.0 - Number(r.distance) }))
+    .filter((r) => r.raw >= MIN_CONFIDENCE)
+    .map((r) => ({ id: r.id, confidence: Math.round(r.raw * 100) / 100 }));
 }
 
 // Cron entry point: find every active memory missing similar edges and run

@@ -1,9 +1,10 @@
 import "dotenv/config";
 import cron from "node-cron";
 import prisma from "./db.js";
+import { Prisma } from "@prisma/client";
 import { localDate, localDateTime } from "./time.js";
 import { fetchWithRetry } from "./fetch-retry.js";
-import { embedText, toVectorLiteral } from "./lib/embed.js";
+import { embedText, embedAndStore, writeEmbedding, STALE_EMBEDDING_WHERE } from "./lib/embed.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
@@ -490,11 +491,7 @@ Output JSON (JSON only, no markdown fence):
         },
         select: { id: true },
       });
-      const emb = await embedText(`${titlePrefix}\n${dSummary}`);
-      if (emb) {
-        const vec = toVectorLiteral(emb);
-        await prisma.$executeRaw`UPDATE memories SET embedding = ${vec}::vector WHERE id = ${digestMem.id}`;
-      }
+      await embedAndStore("memories", digestMem.id, `${titlePrefix}\n${dSummary}`);
       created++;
     } catch (err: any) {
       console.error(`[dialogue_digest] ${dateStr} failed:`, err.message);
@@ -549,50 +546,43 @@ async function sweepNullEmbeddings(): Promise<{ patched: number; attempted: numb
   // 1. embedding IS NULL — newly written or cleared
   // 2. updatedAt > createdAt + 1min AND embeddingAt < updatedAt — content was
   //    edited but the embedding did not follow
-  const rows: any[] = await prisma.$queryRaw`
+  const rows: any[] = await prisma.$queryRaw(Prisma.sql`
     SELECT id, title, content, summary FROM memories
-    WHERE "isActive" = true AND (
-      embedding IS NULL
-      OR ("updatedAt" > "createdAt" + interval '1 minute' AND "embeddingAt" IS NULL)
-      OR ("updatedAt" > "createdAt" + interval '1 minute' AND "embeddingAt" < "updatedAt")
-    )
+    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
     LIMIT 500
-  `;
+  `);
   attempted += rows.length;
   for (const m of rows) {
     const emb = await embedText(`${m.title}\n${m.summary || m.content}`);
     if (!emb) continue;
-    const vec = toVectorLiteral(emb);
-    await prisma.$executeRaw`UPDATE memories SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${m.id}`;
+    await writeEmbedding("memories", m.id, emb);
     patched++;
   }
   // observations: upsert is frequent (unique key); embeddingAt < updatedAt means
   // content changed but the embedding did not. Raw UPDATE does not bump Prisma's
   // @updatedAt, so the sweep does not push updatedAt forward and will not self-trigger.
-  const obsRows: any[] = await prisma.$queryRaw`
+  const obsRows: any[] = await prisma.$queryRaw(Prisma.sql`
     SELECT id, title, content FROM observations
-    WHERE "isActive" = true AND (embedding IS NULL OR "embeddingAt" IS NULL OR "embeddingAt" < "updatedAt")
+    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
     LIMIT 100
-  `;
+  `);
   attempted += obsRows.length;
   for (const o of obsRows) {
     const emb = await embedText(`${o.title}\n${o.content}`);
     if (!emb) continue;
-    const vec = toVectorLiteral(emb);
-    await prisma.$executeRaw`UPDATE observations SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${o.id}`;
+    await writeEmbedding("observations", o.id, emb);
     patched++;
   }
-  const profRows: any[] = await prisma.$queryRaw`
+  const profRows: any[] = await prisma.$queryRaw(Prisma.sql`
     SELECT id, title, content FROM core_profile
-    WHERE "isActive" = true AND (embedding IS NULL OR "embeddingAt" IS NULL OR "embeddingAt" < "updatedAt")
+    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
     LIMIT 100
-  `;
+  `);
   attempted += profRows.length;
   for (const c of profRows) {
     const emb = await embedText(`${c.title}\n${c.content}`);
     if (!emb) continue;
-    const vec = toVectorLiteral(emb);
-    await prisma.$executeRaw`UPDATE core_profile SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${c.id}`;
+    await writeEmbedding("core_profile", c.id, emb);
     patched++;
   }
   return { patched, attempted };

@@ -13,7 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm ci
+      - run: npm install   # not `npm ci`: a single-platform (macOS) lockfile can't be
+                           #   reliably completed for Linux's esbuild/tsx optional deps
+                           #   (@emnapi/*), and npm install reconciles cross-platform.
       - run: npm run db:generate
       - run: npx tsc --noEmit
       - run: npm test

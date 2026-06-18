@@ -12,7 +12,7 @@
 > **状态：引擎完整，有测试有文档。** hybrid retrieval、self-drive / concern、可复现 eval、对话式
 > onboarding、参考投递 providers、对抗式自审 harness 都已落地（tsc + test + scrub 在 CI 里跑）。
 > 范围是**个人 1v1**——多用户 / production 与 SQLite "lite" 是明确的**非目标**（见 [ROADMAP](./ROADMAP.md)）。
-> autonomous wake daemon 已接线、有单元测试；真正跑它要 Claude 订阅 token + 两进程拓扑（见下「运行 autonomous daemon」）。
+> autonomous wake daemon 已接线、有单元测试；真正跑它要订阅 token + 两进程拓扑（见下「运行 autonomous daemon」）。
 
 ## 它是什么
 

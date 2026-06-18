@@ -15,12 +15,14 @@
 //              memory text never leaves the box, so it is not sent to a third
 //              party for sensitive content. Endpoint RERANK_LOCAL_URL
 //              (default http://127.0.0.1:8787/rerank).
-//   * cohere → Cohere Rerank (rerank-multilingual-v3.0 / rerank-v3.5), key COHERE_API_KEY
-//   * jina   → jina-reranker-v2-base-multilingual,                 key JINA_API_KEY
-//   * voyage → Voyage rerank-2 (multilingual),                     key VOYAGE_API_KEY
-// All handle CJK. The API providers (cohere/jina/voyage) are paid AND ship the
-// docs to a third party — prefer `local` for sensitive content. Unset/`none`/
-// missing key/endpoint → null (no-op, graceful).
+//   * cohere → Cohere Rerank,  key COHERE_API_KEY  (e.g. rerank-multilingual-v3.0 / rerank-v3.5)
+//   * jina   → Jina Reranker,  key JINA_API_KEY    (e.g. jina-reranker-v2-base-multilingual)
+//   * voyage → Voyage Rerank,  key VOYAGE_API_KEY  (e.g. rerank-2, multilingual)
+// For the API providers the model is set via RERANK_MODEL (no built-in default —
+// fail-closed; unset → null). Pick a CJK-capable model. The API providers
+// (cohere/jina/voyage) are paid AND ship the docs to a third party — prefer
+// `local` for sensitive content. Unset/`none`/missing key/endpoint/model → null
+// (no-op, graceful).
 //
 // Cross-encoder relevance lives on a different scale than cosine sim — callers
 // must NOT feed these scores through the SEM_FLOOR / cosine-tuned gates. They
@@ -95,15 +97,20 @@ async function rerankLocal(query: string, docs: string[]): Promise<number[] | nu
   }
 }
 
-// Cohere Rerank — POST /v1/rerank. Model defaults to rerank-multilingual-v3.0
-// (CJK-capable); override via RERANK_MODEL (e.g. rerank-v3.5). Response:
+// Cohere Rerank — POST /v1/rerank. Model comes from RERANK_MODEL (no built-in
+// default — fail-closed); pick a CJK-capable model (e.g. rerank-multilingual-v3.0
+// or rerank-v3.5). Response:
 // { results: [{ index, relevance_score }, ...] } sorted by relevance.
 async function rerankCohere(
   query: string,
   docs: string[],
   key: string,
 ): Promise<number[] | null> {
-  const model = process.env.RERANK_MODEL || "rerank-multilingual-v3.0";
+  const model = (process.env.RERANK_MODEL || "").trim();
+  if (!model) {
+    console.warn("[reranker] RERANK_MODEL not set, skipping");
+    return null;
+  }
   try {
     const res = await fetchWithRetry("https://api.cohere.com/v1/rerank", {
       method: "POST",
@@ -139,15 +146,20 @@ async function rerankCohere(
   }
 }
 
-// Jina Reranker — POST /v1/rerank. Model defaults to
-// jina-reranker-v2-base-multilingual (CJK-capable). Response:
+// Jina Reranker — POST /v1/rerank. Model comes from RERANK_MODEL (no built-in
+// default — fail-closed); pick a CJK-capable model (e.g.
+// jina-reranker-v2-base-multilingual). Response:
 // { results: [{ index, relevance_score }, ...] }.
 async function rerankJina(
   query: string,
   docs: string[],
   key: string,
 ): Promise<number[] | null> {
-  const model = process.env.RERANK_MODEL || "jina-reranker-v2-base-multilingual";
+  const model = (process.env.RERANK_MODEL || "").trim();
+  if (!model) {
+    console.warn("[reranker] RERANK_MODEL not set, skipping");
+    return null;
+  }
   try {
     const res = await fetchWithRetry("https://api.jina.ai/v1/rerank", {
       method: "POST",
@@ -184,7 +196,8 @@ async function rerankJina(
   }
 }
 
-// Voyage Reranker — POST /v1/rerank. Model defaults to rerank-2 (multilingual).
+// Voyage Reranker — POST /v1/rerank. Model comes from RERANK_MODEL (no built-in
+// default — fail-closed); pick a multilingual model (e.g. rerank-2).
 // Response: { data: [{ index, relevance_score }, ...] }. relevance_score is in
 // [0,1]; clamp01 guards regardless.
 async function rerankVoyage(
@@ -192,7 +205,11 @@ async function rerankVoyage(
   docs: string[],
   key: string,
 ): Promise<number[] | null> {
-  const model = process.env.RERANK_MODEL || "rerank-2";
+  const model = (process.env.RERANK_MODEL || "").trim();
+  if (!model) {
+    console.warn("[reranker] RERANK_MODEL not set, skipping");
+    return null;
+  }
   try {
     const res = await fetchWithRetry("https://api.voyageai.com/v1/rerank", {
       method: "POST",

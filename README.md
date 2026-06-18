@@ -49,11 +49,10 @@ npm run db:migrate:deploy
 npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 ```
 
-**这个 repo 里不附带任何 persona。** 没有内建的人格，没有示例关系，没有词表。
-你自己带——`npm run init` 会带你一步步把它建起来。引擎刻意空着出厂；
-这份空白正是最强形式的去标识化。
+这个 repo 里没有内建的人格，没有示例关系，没有词表。
+`npm run init` 会带你一步步把它建起来。
 
-**也不附带任何 model。** kimi-core 没有任何内置模型——LLM 调用设 `KIMI_MODEL`（OpenRouter slug），
+**也不附带任何 model。** kimi-core 没有任何内置模型——LLM 调用设 `KIMI_MODEL`（slug），
 语义检索设 `EMBED_MODEL`，跑 daemon 才需要 `DAEMON_MODEL`（裸 Claude id）。`npm run init` 会问你；
 没设就 fail-closed、报一条清楚的错，而不是悄悄拿一个你没选过的模型去跑。
 
@@ -81,8 +80,6 @@ npm run daemon:wake     # 只立刻跑一次 wake —— 用来验证
 - **本地(默认)。** `docker compose up -d` 在你机器上起 Postgres + pgvector,数据一个字节不出门。
 - **自建 Postgres。** 把 `DATABASE_URL` 指向你自己的服务器。需要 `vector` 扩展;`pgroonga` 可选(中文 BM25 —— 没有则回退 `pg_trgm`)。
 - **托管 Postgres(Supabase / Neon / RDS / …)。** 同一个 `DATABASE_URL`,换成托管的连接串就行。Supabase 内置 `pgvector`;引擎通过 Prisma 走标准 Postgres,不绑任何厂商 SDK。
-
-上面三种(含 Supabase)现在都能用。零依赖的 SQLite "lite" 后端是**非目标**(个人 1v1 场景这三条已够;理由见 [ROADMAP](./ROADMAP.md))。
 
 **隐私边界**:本地模式下你的**存储**(Postgres)一个字节不出门,但 embedding 会发给 OpenAI、LLM 调用会发给 OpenRouter——所以被嵌入 / 被推理的记忆文本是发去第三方 API 的。「数据不出门」只指存储层。想全本地,把 embedding / LLM 端点换成你自托管的即可。
 

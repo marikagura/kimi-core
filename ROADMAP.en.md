@@ -2,19 +2,27 @@
 
 > 中文版: [ROADMAP.md](./ROADMAP.md)
 
-Deliberately not in the core yet — named honestly rather than implied:
+Named honestly — what's done, and what's not — rather than implied.
 
-- **SQLite storage backend.** The engine runs on Postgres + pgvector today (one
-  `DATABASE_URL`, local via Docker or any remote). A repository-interface
-  abstraction plus a SQLite + sqlite-vec backend would give a zero-dependency
-  "lite" mode (no Docker, no server). The reranker is already plugin-shaped
-  (`RERANK_PROVIDER`: none / local / cohere / jina / voyage); storage is not yet
-  — it's the next pluggable boundary.
+## Already in core (landed, tested, documented)
 
-- **Autonomous wake (daemon).** Self-drive computes *which* dimensions and
-  concerns to surface (`deriveDrives` / `deriveConcerns`); a cron-driven wake
-  loop that acts on them is left to you to wire on your own schedule.
+- **Hybrid retrieval** — dense (pgvector) + lexical (trigram / optional BM25) + entity graph walk, four-signal weighting + an optional cross-encoder rerank (privacy-gated).
+- **self-drive + concern engine** — the four SEEKING shapes, **config-driven dimensions** (you define your own, see [docs/DRIVES.en.md](./docs/DRIVES.en.md)), and concern open / decay / recurrence / grounding.
+- **Reproducible eval** — hit@5 / hit@10 · MRR · nDCG@10 · set-recall@10 · expectNone negative control · component / rerank A/B · a trend Event per run (`npm run eval` / `npm run eval:history`).
+- **Autonomous wake daemon** — cron wake → drive / concern / persona → action selection (DO_NOTHING is one option) → dispatch, with a HITL propose / auto knob (`daemon.ts` + `intel.ts`; argument in [docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)).
+- **Adversarial self-audit harness** — `npm run scrub` mechanical de-id gate + [docs/SELF-AUDIT.en.md](./docs/SELF-AUDIT.en.md) behavioral audit.
+- Event-sourcing + append-only + human curation; CI (tsc + test + scrub).
 
-- **Conversational onboarding.** `npm run init` is a CLI questionnaire today; a
-  chat-style persona builder (the way a persona is actually grown, not filled in
-  a form) is a v2.
+## Not done yet (deliberately out, or unfinished)
+
+- **SQLite storage backend.** The engine runs on Postgres + pgvector today (one `DATABASE_URL`, local via Docker or any remote). A repository-interface abstraction plus a SQLite + sqlite-vec backend would give a zero-dependency "lite" mode (no Docker, no server). The reranker is already plugin-shaped; storage is not yet — the next pluggable boundary.
+- **Retrieval indexing at scale.** Retrieval currently scores every active row per query (fine at single-user scale, noted in `retrieval.ts`). Past ~10k rows it should switch to a candidate-pool CTE (HNSW + trigram GIN) before scoring — the ANN path isn't wired yet.
+- **Delivery layer (seams present, implementations not shipped).** The wake daemon has a pluggable Notifier seam, WEBSEARCH has a pluggable search provider (default no-op), and EXPLORE ships empty content — the seams are there, but core ships no concrete delivery / search implementation (push / email / search backend is yours to wire).
+- **Conversational onboarding.** `npm run init` is a CLI questionnaire today; a chat-style persona builder (the way a persona is actually grown, not filled in a form) is a v2.
+
+## v2
+
+- A conversational persona builder, replacing the CLI questionnaire.
+- Pluggable storage (including a SQLite "lite" mode).
+- Retrieval at scale (an ANN candidate pool), and publishing the eval numbers across versions.
+- At least one ready-to-use reference Notifier / search provider each.

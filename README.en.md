@@ -8,9 +8,11 @@ For the architecture, read **[ARCHITECTURE.en.md](./ARCHITECTURE.en.md)** — ev
 For the autonomous-agency layer (cron wake → drive/concern → action selection, DO_NOTHING one option not the default → dispatch),
 read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argument, the full citations, and the honest fault lines.
 
-> **Status: early.** Engine core + clean-room scaffold are up. Config extraction, the onboarding wizard,
-> the reproducible eval, and the audit harness are landing incrementally. This is a real, in-progress port —
-> not a one-shot code drop.
+> **Status: engine usable, polishing.** The core engine — hybrid retrieval, self-drive / concern, the
+> reproducible eval, the self-audit harness, the autonomous wake daemon — has landed, with tests and docs.
+> Still being polished: storage portability (a SQLite "lite" mode), retrieval indexing at scale,
+> conversational onboarding, and the delivery layer (see the [ROADMAP](./ROADMAP.md)). A real, in-progress
+> port — not a one-shot code drop.
 
 ## What it is
 
@@ -20,8 +22,9 @@ read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argum
   concern engine (open / resolved · decay · recurrence · grounding). Not importance sorting.
 - **Event sourcing + append-only + human curation** — no LLM auto-consolidation (its failure mode is
   silent corruption). Every fact about you passes through your own hand and confirmation.
-- **Reproducible retrieval eval** — MRR / precision with hard negatives, reranker A/B. Numbers you can
-  re-run, not a claim in a README.
+- **Reproducible retrieval eval** — hit@5 / hit@10 / MRR / nDCG@10 / set-recall@10, with a
+  hard-negative control (expectNone) and reranker / component A/B. Labeled by keyword (not row-ids, so
+  it survives a re-seed); each run writes a trend Event. Numbers you can re-run, not a claim in a README.
 - **Adversarial self-audit harness** — point a fleet of agents at your own fork to hunt leaks and bugs,
   with *behavioral* verification. (Static inference systematically over-claims — learned the hard way.)
 
@@ -74,7 +77,7 @@ epistemic half is the exception — it is method, not a stance to own. See **[do
 | command | what |
 |---|---|
 | `npm run init`  | onboarding wizard — turns a few answers into `config.yaml` + `persona.md` |
-| `npm run eval`  | reproducible retrieval evaluation (MRR / precision, hard negatives) |
+| `npm run eval`  | reproducible retrieval evaluation (hit@5/10 · MRR · nDCG@10 · set-recall@10 · expectNone control; writes a trend Event, read back with `npm run eval:history`) |
 | `npm run scrub` | leak scanner — blocks any private residue from reaching a commit |
 
 ## License

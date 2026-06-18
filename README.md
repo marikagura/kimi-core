@@ -8,9 +8,10 @@
 关于 autonomous-agency 层（cron wake → drive/concern → action selection，DO_NOTHING 是一个选项而非默认 → dispatch），
 请读 **[docs/AUTONOMY.md](./docs/AUTONOMY.md)**——架构论证、完整 citations，以及诚实的断层线。
 
-> **状态：早期。** 引擎 core + clean-room 脚手架已经搭起来。Config 提取、onboarding wizard、
-> 可复现的 eval、以及审计 harness 正在逐步落地。这是一个真实的、进行中的移植——
-> 不是一次性的代码倾倒。
+> **状态：引擎可用、在打磨。** Core 引擎——hybrid retrieval、self-drive / concern、可复现 eval、
+> 自审 harness、autonomous wake daemon——已落地，有测试有文档。仍在打磨的是 storage 可移植性
+> （SQLite lite 模式）、规模化检索索引、对话式 onboarding、以及投递层（详见 [ROADMAP](./ROADMAP.md)）。
+> 这是一个真实的、进行中的移植——不是一次性的代码倾倒。
 
 ## 它是什么
 
@@ -20,8 +21,9 @@
   concern 引擎（open / resolved · decay · recurrence · grounding）。不是按 importance 排序。
 - **Event sourcing + append-only + 人工 curation** —— 没有 LLM 自动 consolidation（它的 failure mode 是
   静默腐蚀）。每一条关于你的 fact 都要过你自己的手并经你确认。
-- **可复现的 retrieval eval** —— MRR / precision，带 hard negatives，reranker A/B。是你能
-  重跑的数字，而不是 README 里的一句声明。
+- **可复现的 retrieval eval** —— hit@5 / hit@10 / MRR / nDCG@10 / set-recall@10，带
+  hard-negative 负控（expectNone）和 reranker / 组件 A/B。按 keyword 标注（不绑 row-id，
+  re-seed 库也不失效），每跑写一条趋势 Event。是你能重跑的数字，不是 README 里的一句声明。
 - **对抗式自审 harness** —— 把一支 agent 舰队对准你自己的 fork 去猎 leak 和 bug，
   带 *行为级* 验证。（Static inference 会系统性地 over-claim——这是吃过亏学来的。）
 
@@ -74,7 +76,7 @@ Epistemic 那一半是例外——它是方法，不是一个要去认领的 sta
 | command | what |
 |---|---|
 | `npm run init`  | onboarding wizard —— 把几个回答变成 `config.yaml` + `persona.md` |
-| `npm run eval`  | 可复现的 retrieval evaluation（MRR / precision，hard negatives） |
+| `npm run eval`  | 可复现的 retrieval evaluation（hit@5/10 · MRR · nDCG@10 · set-recall@10 · expectNone 负控；写趋势 Event，`npm run eval:history` 读回） |
 | `npm run scrub` | leak scanner —— 拦住任何私有残留进入 commit |
 
 ## License

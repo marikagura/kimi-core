@@ -18,8 +18,9 @@ For the engineering patterns when wiring a surface (prompt caching / retry / cre
 
 ## What it is
 
-- **Hybrid retrieval** — dense (pgvector) + lexical (BM25 / trigram) + entity graph walk, four-signal
-  weighted, with an optional cross-encoder rerank stage. Not one `.similarity()` call.
+- **Hybrid retrieval** — dense (pgvector) + lexical (BM25 / trigram) + time-decay + importance, four-signal
+  weighted (entity-mention is a keyword-arm bonus + filter bypass, 1-hop; multi-hop `graph_walk` is a separate
+  tool, not part of the ranked score), with an optional cross-encoder rerank stage. Not one `.similarity()` call.
 - **Active self-drive** — Panksepp-style affective drives that *surface* memories proactively, plus a
   concern engine (open / resolved · decay · recurrence · grounding). Not importance sorting.
 - **Event sourcing + append-only + human curation** — no LLM auto-consolidation (its failure mode is

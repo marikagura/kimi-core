@@ -16,8 +16,9 @@
 
 ## 它是什么
 
-- **Hybrid retrieval** —— dense（pgvector）+ lexical（BM25 / trigram）+ entity graph walk，四信号
-  加权，外加一个可选的 cross-encoder rerank 阶段。
+- **Hybrid retrieval** —— dense（pgvector）+ lexical（BM25 / trigram）+ 时间衰减 + 重要度，四信号
+  加权（entity-mention 是关键词臂的加成 + 过滤旁路，单跳；多跳 `graph_walk` 是独立工具，不进排序），
+  外加一个可选的 cross-encoder rerank 阶段。
 - **Active self-drive** —— Panksepp 式的情感 drives，会主动地把记忆 *surface* 出来，外加一个
   concern 引擎（open / resolved · decay · recurrence · grounding）。不是按 importance 排序。
 - **Event sourcing + append-only + 人工 curation** —— 没有 LLM 自动 consolidation（它的 failure mode 是

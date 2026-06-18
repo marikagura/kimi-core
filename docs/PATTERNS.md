@@ -2,7 +2,7 @@
 
 # 工程模式 · prompt caching / retry / 凭证轮转
 
-这些不在引擎里——是搭 LLM surface（对话端、wake daemon、推送）时反复要踩对的几条。都从实战磨出来的；尤其 caching，坑全是**静默的**，不实测发现不了。
+这些不在引擎里——是搭 LLM surface（对话端、wake daemon、推送）时反复踩过的坑。仅作参考。
 
 ## 1. Prompt caching：省钱靠前缀，不靠 marker
 
@@ -36,7 +36,7 @@ breakpoint 放在**最近一条消息**的最后一个 content block——前缀
 
 ### 为什么 caching 不违背「不 auto-consolidation」
 
-缓存是对**一次性 transcript buffer** 省钱的 plumbing——它不摘要、不下结论、不声称对话「是什么」。这跟自动 compact / 自动摘要（那是对「对话曾是什么」下一个被压缩的判断）是两回事：前者中性，做满；后者带判断，本仓不做（见 [AUTONOMY.md](./AUTONOMY.md) 的 curation 立场——上下文靠 curated memory + reentry 重建，不靠自动摘要 transcript）。
+缓存是对**一次性 transcript buffer** 省钱的 plumbing——它不摘要、不下结论、不声称对话「是什么」。这跟自动 compact / 自动摘要（那是对「对话曾是什么」下一个被压缩的判断）是两回事：前者中性，做满；后者带判断，本仓不做（见 [AUTONOMY.md](./AUTONOMY.md) 的 curation 立场——上下文靠 curated memory + reentry 重建，不靠自动摘要 transcript，不做transcript工程）。
 
 ## 2. Retry / backoff
 

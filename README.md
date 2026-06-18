@@ -112,6 +112,16 @@ Epistemic 那一半是例外——它是方法，不是一个要去认领的 sta
 | `npm run eval`  | 可复现的 retrieval evaluation（hit@5/10 · MRR · nDCG@10 · set-recall@10 · expectNone 负控；写趋势 Event，`npm run eval:history` 读回） |
 | `npm run scrub` | leak scanner —— 拦住任何私有残留进入 commit |
 
+## 会话生命周期工具:reentry / reentry_delta / closeout
+
+agent 在一段对话里按这三个 MCP 工具走完整个生命周期:
+
+- **`reentry`** —— 新窗口开头调一次。把 profile、active states、topics、anchors(CORE / BOUNDARY / PREFERENCE)、近期 episodes、digests、近期 events 一次性载入成冷启动上下文。可传 `tag`(窗口标识,建议 `cc-YYMMDDHHMM`)落一个 boot 锚点,这个窗口之后的 `reentry_delta` 都锚到它。
+- **`reentry_delta`** —— 会话中途调,只取自上次 reentry / delta 以来**新增**的(按 `tag` 沿锚链),比整段 reentry 便宜。
+- **`closeout`** —— 窗口结束前调一次。把这段对话存成一条 EPISODE(只写 arc,不复述已落表的事实)+ 一条 self-score(valence / arousal,负向且复发可带 `concernKey`)+ keyMemories / stateUpdates / observations / pendingItems,建相似边,落一个会话结束标记。
+
+这三个名字是作者 canon 的延续。如果你有和 AI 约定好的词,请**在代码里**自行修改:`tools.ts` 的工具名 + `AGENTS.md`、agent prompt 里所有引用处——一起改,否则 agent 按旧名调不到。
+
 ## License
 
 AGPL-3.0-or-later。

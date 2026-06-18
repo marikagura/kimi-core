@@ -119,6 +119,16 @@ epistemic half is the exception — it is method, not a stance to own. See **[do
 | `npm run eval`  | reproducible retrieval evaluation (hit@5/10 · MRR · nDCG@10 · set-recall@10 · expectNone control; writes a trend Event, read back with `npm run eval:history`) |
 | `npm run scrub` | leak scanner — blocks any private residue from reaching a commit |
 
+## Session-lifecycle tools: reentry / reentry_delta / closeout
+
+The agent walks a conversation's lifecycle through these three MCP tools:
+
+- **`reentry`** — call once at the start of a new window. Loads profile, active states, topics, anchors (CORE / BOUNDARY / PREFERENCE), recent episodes, digests, and recent events into one cold-start context. Pass a `tag` (window id, suggested `cc-YYMMDDHHMM`) to drop a boot anchor that this window's later `reentry_delta` calls anchor to.
+- **`reentry_delta`** — call mid-session for only what's **new** since the last reentry / delta (following the tagged anchor chain); cheaper than a full reentry.
+- **`closeout`** — call once before a window closes. Saves the session as one EPISODE (the arc only — not a replay of facts already written to their tables), a self-score (valence / arousal, plus a `concernKey` when negative and recurring), keyMemories / stateUpdates / observations / pendingItems, builds similar-edges, and logs a session-end marker.
+
+These three names are a continuation of the author's canon. If you have words you've agreed on with your AI, rename them **in code**: the tool name in `tools.ts` plus every reference in `AGENTS.md` / your agent prompts — together, or the agent won't find them by the old name.
+
 ## License
 
 AGPL-3.0-or-later.

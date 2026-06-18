@@ -9,6 +9,7 @@ import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
 import { roleModel } from "./lib/models.js";
+import { CHAT_SOURCE } from "@kimi/context-core";
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY!;
 // No built-in model — every model is the deployer's own (KIMI_MODEL, with optional
@@ -132,7 +133,7 @@ async function getExistingMemoryTitles(): Promise<string> {
 
 async function extractFromChat(since: Date, existingTitles: string) {
   const chats = await prisma.event.findMany({
-    where: { eventType: "CHAT", source: "chat", createdAt: { gte: since } },
+    where: { eventType: "CHAT", source: CHAT_SOURCE, createdAt: { gte: since } },
     orderBy: { createdAt: "asc" },
     take: 100,
   });
@@ -319,7 +320,7 @@ export async function scanDialogueDigests(
   const events = await prisma.event.findMany({
     where: {
       eventType: "CHAT",
-      source: "chat",
+      source: CHAT_SOURCE,
       createdAt: { gte: _cutoffStart, lt: _cutoffEnd },
     },
     orderBy: { createdAt: "asc" },

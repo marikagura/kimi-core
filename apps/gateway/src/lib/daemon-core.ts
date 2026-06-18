@@ -15,6 +15,7 @@
 import "dotenv/config";
 import prisma from "../db.js";
 import { localDate, localDateTime } from "../time.js";
+import { CHAT_SOURCE, CROSS_CHAT_SOURCE, HOOK_SOURCE, LOOP_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE } from "@kimi/context-core";
 
 // Clear API-key env vars that would shadow the subscription token, forcing the
 // SDK to authenticate via CLAUDE_CODE_OAUTH_TOKEN (subscription plan limit).
@@ -30,18 +31,10 @@ export function ensureSubscriptionAuth() {
   }
 }
 
-// ── event-source names (config-driven) ─────────────────────────────────────
-// Map these onto your own ingestion surfaces. Defaults are generic placeholders.
-//  - CHAT_SOURCE        : primary conversational surface (event.source for CHAT)
-//  - CROSS_CHAT_SOURCE  : a second conversational surface to merge in (optional)
-//  - HOOK_SOURCE        : interactive client heartbeat (real presence)
-//  - LOOP_SOURCE        : background loop heartbeat (NOT presence — excluded)
-//  - COMMIT_SOURCE      : code-commit activity stream
-const CHAT_SOURCE = process.env.GROUND_CHAT_SOURCE ?? "chat";
-const CROSS_CHAT_SOURCE = process.env.GROUND_CROSS_CHAT_SOURCE ?? "chat_b";
-const HOOK_SOURCE = process.env.GROUND_HOOK_SOURCE ?? "client_hook";
-const LOOP_SOURCE = process.env.GROUND_LOOP_SOURCE ?? "client_loop";
-const COMMIT_SOURCE = process.env.GROUND_COMMIT_SOURCE ?? "git_commit";
+// Event-source names + the commit eventType come from the shared sources module
+// (@kimi/context-core/sources) so every reader — daemon, drives, intel, the
+// context builders — agrees on them. Map them onto your surfaces via the GROUND_*
+// env vars there.
 
 // Recency window (hours) within which the chat surfaces count as the *current*
 // conversation. A wake loop ticks every several hours; once the latest chat
@@ -71,7 +64,7 @@ export async function buildGroundTruth(now: Date): Promise<string> {
 
   // Sequential queries, not concurrent — share a small DB connection pool; favor
   // stability over latency here.
-  const commits = await prisma.event.findMany({ where: { eventType: "SYSTEM", source: COMMIT_SOURCE, createdAt: { gte: windowStart } }, orderBy: { createdAt: "desc" }, take: 40 });
+  const commits = await prisma.event.findMany({ where: { eventType: COMMIT_EVENT_TYPE, source: COMMIT_SOURCE, createdAt: { gte: windowStart } }, orderBy: { createdAt: "desc" }, take: 40 });
   const lastHook = await prisma.event.findFirst({ where: { eventType: "APP_OPEN", source: HOOK_SOURCE }, orderBy: { createdAt: "desc" } });
   // True device activity = app-open. Exclude the interactive hook heartbeat and
   // the background loop heartbeat — neither is the user picking up a device.

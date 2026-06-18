@@ -8,6 +8,7 @@
 import prisma from "../db.js";
 import { driveBoostByDim } from "./thought-pool.js";
 import { localDate } from "../time.js";
+import { CHAT_SOURCE, CROSS_CHAT_SOURCE } from "@kimi/context-core";
 
 export function slugify(s: string): string {
   return (
@@ -562,7 +563,7 @@ export async function previewDriveDims(now: Date = new Date()): Promise<{ dims: 
     ? await prisma.event.findFirst({
         where: {
           eventType: "CHAT",
-          source: { in: [process.env.GROUND_CHAT_SOURCE ?? "chat", process.env.GROUND_CROSS_CHAT_SOURCE ?? "chat_b"] },
+          source: { in: [CHAT_SOURCE, CROSS_CHAT_SOURCE] },
           createdAt: { lte: now },
         },
         orderBy: { createdAt: "desc" },

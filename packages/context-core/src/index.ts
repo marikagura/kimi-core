@@ -21,6 +21,11 @@
 
 import type { PrismaClient } from "@prisma/client";
 import { localDateTime } from "./time.js";
+import { CHAT_SOURCE, CROSS_CHAT_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE } from "./sources.js";
+
+// Re-export the shared source / event-identity constants so the gateway imports
+// them from "@kimi/context-core" rather than re-deriving (and drifting from) them.
+export * from "./sources.js";
 
 export type Surface = "cc" | "tg" | "voice" | "chatroom";
 
@@ -253,13 +258,10 @@ export async function loadEvents(prisma: PrismaClient, opts: ContextOpts): Promi
   const h8 = new Date(now - 8 * 3600000);
   const h12 = new Date(now - 12 * 3600000);
   const sel = { eventType: true, source: true, value: true, createdAt: true };
-  const commitSource = process.env.COMMIT_EVENT_SOURCE ?? "git_commit";
-  const primaryChatSource = process.env.PRIMARY_CHAT_SOURCE ?? "chat";
-  const crossChatSource = process.env.CROSS_CHAT_SOURCE ?? "chat_b";
-  const crossSource = opts.surface === "chatroom" ? primaryChatSource : crossChatSource; // read the other surface's chat archive
+  const crossSource = opts.surface === "chatroom" ? CHAT_SOURCE : CROSS_CHAT_SOURCE; // read the other surface's chat archive
   const [git, nonChat, crossChat, diary, app] = await Promise.all([
-    prisma.event.findMany({ where: { eventType: "MANUAL_NOTE", source: commitSource, createdAt: { gte: h8 } }, select: sel, orderBy: { createdAt: "desc" }, take: 10 }),
-    prisma.event.findMany({ where: { eventType: { notIn: ["CHAT", "APP_OPEN", "SYSTEM", "DREAM", "MANUAL_NOTE"] }, source: { not: commitSource }, createdAt: { gte: h12 } }, select: sel, orderBy: { createdAt: "desc" }, take: 15 }),
+    prisma.event.findMany({ where: { eventType: COMMIT_EVENT_TYPE, source: COMMIT_SOURCE, createdAt: { gte: h8 } }, select: sel, orderBy: { createdAt: "desc" }, take: 10 }),
+    prisma.event.findMany({ where: { eventType: { notIn: ["CHAT", "APP_OPEN", "SYSTEM", "DREAM", "MANUAL_NOTE"] }, source: { not: COMMIT_SOURCE }, createdAt: { gte: h12 } }, select: sel, orderBy: { createdAt: "desc" }, take: 15 }),
     prisma.event.findMany({ where: { eventType: "CHAT", source: crossSource }, select: sel, orderBy: { createdAt: "desc" }, take: 20 }),
     prisma.event.findMany({ where: { eventType: "DREAM" }, select: sel, orderBy: { createdAt: "desc" }, take: 3 }),
     prisma.event.findMany({ where: { eventType: "APP_OPEN" }, select: sel, orderBy: { createdAt: "desc" }, take: 8 }),
@@ -343,16 +345,14 @@ export interface MergedChatMsg { role: "user" | "assistant"; text: string; surfa
 //   unlike a "latest N rows" window that slides off the oldest end and invalidates the cache each turn.
 // sinceTs omitted = legacy "latest take rows" mode (other callers may still use it).
 export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: Date): Promise<MergedChatMsg[]> {
-  const primaryChatSource = process.env.PRIMARY_CHAT_SOURCE ?? "chat";
-  const crossChatSource = process.env.CROSS_CHAT_SOURCE ?? "chat_b";
   const whereFor = (source: string) =>
     sinceTs
       ? { eventType: "CHAT", source, createdAt: { gte: sinceTs } }
       : { eventType: "CHAT", source };
   const fetchTake = sinceTs ? 1500 : take; // anchored mode pulls up to the cap; the caller trims by token budget
   const [tg, web] = await Promise.all([
-    prisma.event.findMany({ where: whereFor(primaryChatSource) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { value: true, createdAt: true } }),
-    prisma.event.findMany({ where: whereFor(crossChatSource) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { value: true, createdAt: true } }),
+    prisma.event.findMany({ where: whereFor(CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { value: true, createdAt: true } }),
+    prisma.event.findMany({ where: whereFor(CROSS_CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { value: true, createdAt: true } }),
   ]);
   const parse = (rows: { value: string | null; createdAt: Date }[], surface: "tg" | "chat"): MergedChatMsg[] =>
     rows.flatMap((r) => {

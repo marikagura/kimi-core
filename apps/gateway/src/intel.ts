@@ -358,6 +358,10 @@ export async function scanDialogueDigests(
     if (now - lastE.createdAt.getTime() <= GAP_H * 3600 * 1000) { skipped++; continue; }
     // dateStr = session start date in the configured local timezone (used in the title)
     const dateStr = localDate(dayEvents[0].createdAt);
+    // session start time — disambiguates multiple sessions on the SAME calendar day.
+    // Grouping is per-session (by idle gap), so the dedup key must be per-session too;
+    // a date-only key silently drops every 2nd+ same-day session.
+    const startHHMM = localDateTime(dayEvents[0].createdAt).slice(11, 16);
     // skip sparse sessions
     if (dayEvents.length < MIN_TURNS) { skipped++; continue; }
 
@@ -376,7 +380,7 @@ export async function scanDialogueDigests(
     }
     if (parsed.length < MIN_TURNS) { skipped++; continue; }
 
-    const titlePrefix = `[chat ${dateStr}]`;
+    const titlePrefix = `[chat ${dateStr} ${startHHMM}]`;
 
     // session score collected from the digest's v/a output
     let scoreV: number | null = null, scoreA: number | null = null, scoreNote = "";
@@ -479,6 +483,10 @@ Output JSON (JSON only, no markdown fence):
           eventIdEnd: lastEvent.id,
           digestTimeStart: firstEvent.createdAt,
           digestTimeEnd: lastEvent.createdAt,
+          // validFrom = when the conversation actually happened. The folds anchor
+          // recency on validFrom (not write time); the 7-day backfill writes old
+          // sessions today, so without this their drive recency would read as "now".
+          validFrom: lastEvent.createdAt,
         },
         select: { id: true },
       });
@@ -495,7 +503,7 @@ Output JSON (JSON only, no markdown fence):
 
     // session self-score from the digest's v/a. dedup by title.
     if (scoreV !== null) {
-      const scoreTitle = `chat-score ${dateStr}`;
+      const scoreTitle = `chat-score ${dateStr} ${startHHMM}`;
       const existsScore = await prisma.memory.findFirst({
         where: { memoryType: "SELF_SCORE", title: scoreTitle },
         select: { id: true },
@@ -517,6 +525,7 @@ Output JSON (JSON only, no markdown fence):
               authorModel: roleModel("INTEL_SCORE_AUTHOR_MODEL"),
               digestTimeStart: dayEvents[0].createdAt,
               digestTimeEnd: dayEvents[dayEvents.length - 1].createdAt,
+              validFrom: dayEvents[dayEvents.length - 1].createdAt,
             },
           });
         } catch (err: any) {

@@ -1027,14 +1027,16 @@ export function registerAllTools(server: McpServer) {
       const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       ctx += digests.length
         ? digests.map((d) => {
-            const isRecent = d.createdAt >= oneWeekAgo;
+            // Anchor on the conversation's event time (digestTimeEnd), not the row
+            // write time — the 7-day backfill writes old sessions today, so createdAt
+            // would mislabel a days-old digest as "today" and re-introduce the exact
+            // "old conversation reads as current" failure this label exists to prevent.
+            const eventTime = d.digestTimeEnd ?? d.createdAt;
+            const isRecent = eventTime >= oneWeekAgo;
             const body = isRecent
               ? (d.summary || d.content).slice(0, 300)
               : (d.summary || d.content.slice(0, 100));
-            // Relative-age label per line — titles are not guaranteed to carry a
-            // date, so without it a cold-start reentry can read a days-old digest
-            // as if it were the current conversation.
-            const ageDays = Math.floor((Date.now() - d.createdAt.getTime()) / 86_400_000);
+            const ageDays = Math.floor((Date.now() - eventTime.getTime()) / 86_400_000);
             const ageLabel = ageDays <= 0 ? "today" : `${ageDays}d ago`;
             return `- [${ageLabel}] ${d.title}: ${body}`;
           }).join("\n")

@@ -23,8 +23,8 @@ describe("buildPersonaMd", () => {
     expect(md).not.toContain("称呼:");
     expect(md).not.toContain("语气 / register:");
   });
-  it("falls back to a config pointer when no drives are given", () => {
-    expect(buildPersonaMd({ ...full, drives: [] })).toContain("selfDrive.drives");
+  it("falls back to a DRIVE_DIMS pointer when no drives are given", () => {
+    expect(buildPersonaMd({ ...full, drives: [] })).toContain("DRIVE_DIMS");
   });
 });
 

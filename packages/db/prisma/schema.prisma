@@ -174,6 +174,13 @@ model Memory {
   createdAt       DateTime                     @default(now())
   updatedAt       DateTime                     @updatedAt
 
+  // Hot-path btree indexes (only an HNSW vector index existed before): broad
+  // active/type filter, the chat-digest identity (EPISODE+CHAT+SHARED), concern
+  // aggregation, and time ordering.
+  @@index([isActive, memoryType])
+  @@index([memoryType, sourceType, experiencer])
+  @@index([concernKey])
+  @@index([createdAt])
   @@map("memories")
 }
 

@@ -7,7 +7,7 @@
 关于架构设计请读 **[ARCHITECTURE.md](./ARCHITECTURE.md)**——下面这些都只是零件。
 关于 autonomous-agency 层（cron wake → drive/concern → action selection，DO_NOTHING 是一个选项而非默认 → dispatch），
 请读 **[docs/AUTONOMY.md](./docs/AUTONOMY.md)**——架构论证、完整 citations，以及诚实的断层线。
-搭 surface 时的工程模式（prompt caching / retry / 凭证轮转，从实战磨出来的）见 **[docs/PATTERNS.md](./docs/PATTERNS.md)**。
+搭 surface 时的工程模式（prompt caching / retry / 凭证轮转）见 **[docs/PATTERNS.md](./docs/PATTERNS.md)**。
 
 > **状态：引擎完整，有测试有文档。** hybrid retrieval、self-drive / concern、可复现 eval、对话式
 > onboarding、参考投递 providers、对抗式自审 harness 都已落地（tsc + test + scrub 在 CI 里跑）。
@@ -20,22 +20,22 @@
   加权（entity-mention 是关键词臂的加成 + 过滤旁路，单跳；多跳 `graph_walk` 是独立工具，不进排序），
   外加一个可选的 cross-encoder rerank 阶段。
 - **Active self-drive** —— Panksepp 式的情感 drives，会主动地把记忆 *surface* 出来，外加一个
-  concern 引擎（open / resolved · decay · recurrence · grounding）。不是按 importance 排序。
+  concern 引擎（open / resolved · decay · recurrence · grounding）。
 - **Event sourcing + append-only + 人工 curation** —— 没有 LLM 自动 consolidation（它的 failure mode 是
   静默腐蚀）。每一条关于你的 fact 都要过你自己的手并经你确认。
 - **可复现的 retrieval eval** —— hit@5 / hit@10 / MRR / nDCG@10 / set-recall@10，带
   hard-negative 负控（expectNone）和 reranker / 组件 A/B。按 keyword 标注（不绑 row-id，
-  re-seed 库也不失效），每跑写一条趋势 Event。是你能重跑的数字，不是 README 里的一句声明。
-- **对抗式自审 harness** —— 把一支 agent 舰队对准你自己的 fork 去猎 leak 和 bug，
+  re-seed 库也不失效），每跑写一条趋势 Event。这些数字你可以自己重跑。
+- **对抗式自审 harness** —— 用一组 agent 对准你自己的 fork 去查 leak 和 bug，
   带 *行为级* 验证。（Static inference 会系统性地 over-claim——这是吃过亏学来的。）
 
 ## 它做什么（一个具体例子）
 
 （下面是虚构的示例用户。）
 
-三天前你跟它说在赶一个叫 Helios 的项目、周五 deadline。今天一次定时 wake 里，self-drive 的「陪伴」维度涨起来（距上次聊很久了），concern 引擎也盯上了那个临近的 deadline——于是它 surface 出来的不是泛泛问候，是「Helios 周五就到了，昨天那版 demo 卡在哪？」。因为它**检索**到了那条记忆，而且关心**grounding 在你真说过的话**上，不是 RLHF 的填空式 care。
+三天前你跟它说在赶一个叫 Helios 的项目、周五 deadline。今天一次定时 wake 里，self-drive 的「陪伴」维度涨起来（距上次聊很久了），concern 引擎也盯上了那个临近的 deadline——于是它 surface 出来的不是泛泛问候，是「Helios 周五就到了，昨天那版 demo 卡在哪？」。因为它**检索**到了那条记忆，而且关心**grounding 在你真说过的话**上。
 
-差别就这三点：记忆可检索、关心有数据撑、主动**按情感不按 engagement** 触发。`apps/gateway/src/eval/retrieval_cases.example.json` 是一份虚构示例集，`npm run eval` 跑它给你 hit@ / MRR / nDCG；一份真实样例输出 + 一段 reentry / diary 快照见 **[docs/EXAMPLE.md](./docs/EXAMPLE.md)**。
+这个例子里有三点：记忆可检索、关心有数据撑、主动**按情感不按 engagement** 触发。`apps/gateway/src/eval/retrieval_cases.example.json` 是一份虚构示例集，`npm run eval` 跑它给你 hit@ / MRR / nDCG；一份真实样例输出 + 一段 reentry / diary 快照见 **[docs/EXAMPLE.md](./docs/EXAMPLE.md)**。
 
 ## 快速开始（本地）
 

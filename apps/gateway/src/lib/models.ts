@@ -1,5 +1,5 @@
 // kimi-core ships NO built-in model. The deployer brings their own, via env.
-// Baking a specific model into the engine is the wrong OSS pattern — it silently
+// Baking a specific model into the engine would mean it silently
 // runs on someone else's model choice. Same stance as the empty persona: the
 // engine doesn't choose for you.
 //

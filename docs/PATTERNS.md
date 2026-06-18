@@ -8,7 +8,7 @@
 
 **唯一的不变量：缓存是前缀匹配。前缀里任何一个字节变了，它之后的全部失效。** 渲染顺序固定 `tools → system → messages`；缓存键是渲染后、到每个 `cache_control` breakpoint 为止的精确字节。
 
-### 铁律：stable 在前，volatile 在后
+### 规则：stable 在前，volatile 在后
 
 把**不变的**放前面（persona / 原则 / 长期 memory / 固定 tool 列表），挂 `cache_control`；把**每轮都变的**（时间戳、git commit、本轮 activity、随请求变的 id）放到**最后一个 breakpoint 之后**。
 

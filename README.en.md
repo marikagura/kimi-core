@@ -7,7 +7,7 @@ A **personal, single-user agent memory OS** — an agentic memory + self-drive e
 For the architecture, read **[ARCHITECTURE.en.md](./ARCHITECTURE.en.md)** — everything below is just parts.
 For the autonomous-agency layer (cron wake → drive/concern → action selection, DO_NOTHING one option not the default → dispatch),
 read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argument, the full citations, and the honest fault lines.
-For the engineering patterns when wiring a surface (prompt caching / retry / credential rotation, battle-tested), see **[docs/PATTERNS.en.md](./docs/PATTERNS.en.md)**.
+For the engineering patterns when wiring a surface (prompt caching / retry / credential rotation), see **[docs/PATTERNS.en.md](./docs/PATTERNS.en.md)**.
 
 > **Status: engine complete, with tests and docs.** hybrid retrieval, self-drive / concern, the
 > reproducible eval, conversational onboarding, reference delivery providers, and the adversarial self-audit
@@ -20,24 +20,24 @@ For the engineering patterns when wiring a surface (prompt caching / retry / cre
 
 - **Hybrid retrieval** — dense (pgvector) + lexical (BM25 / trigram) + time-decay + importance, four-signal
   weighted (entity-mention is a keyword-arm bonus + filter bypass, 1-hop; multi-hop `graph_walk` is a separate
-  tool, not part of the ranked score), with an optional cross-encoder rerank stage. Not one `.similarity()` call.
+  tool, not part of the ranked score), with an optional cross-encoder rerank stage.
 - **Active self-drive** — Panksepp-style affective drives that *surface* memories proactively, plus a
-  concern engine (open / resolved · decay · recurrence · grounding). Not importance sorting.
+  concern engine (open / resolved · decay · recurrence · grounding).
 - **Event sourcing + append-only + human curation** — no LLM auto-consolidation (its failure mode is
   silent corruption). Every fact about you passes through your own hand and confirmation.
 - **Reproducible retrieval eval** — hit@5 / hit@10 / MRR / nDCG@10 / set-recall@10, with a
   hard-negative control (expectNone) and reranker / component A/B. Labeled by keyword (not row-ids, so
-  it survives a re-seed); each run writes a trend Event. Numbers you can re-run, not a claim in a README.
-- **Adversarial self-audit harness** — point a fleet of agents at your own fork to hunt leaks and bugs,
+  it survives a re-seed); each run writes a trend Event.
+- **Adversarial self-audit harness** — point a set of agents at your own fork to find leaks and bugs,
   with *behavioral* verification. (Static inference systematically over-claims — learned the hard way.)
 
 ## What it does (a concrete example)
 
 (A fictional example user, not any real person.)
 
-Three days ago you told it you were rushing a project called Helios, due Friday. Today, on a scheduled wake, the self-drive "companionship" dimension rises (it's been a while) and the concern engine flags the approaching deadline — so what it surfaces isn't a generic hello, it's "Helios is due Friday — where did yesterday's demo get stuck?" Because it **retrieved** that memory, and the concern is **grounded in what you actually said**, not an RLHF fill-in-the-blank.
+Three days ago you told it you were rushing a project called Helios, due Friday. Today, on a scheduled wake, the self-drive "companionship" dimension rises (it's been a while) and the concern engine flags the approaching deadline — so what it surfaces isn't a generic hello, it's "Helios is due Friday — where did yesterday's demo get stuck?" Because it **retrieved** that memory, and the concern is **grounded in what you actually said**.
 
-That's the difference, in three points: memory is retrievable, concern is data-backed, and initiative fires **by affect, not by engagement**. Want numbers, not my word for it? `apps/gateway/src/eval/retrieval_cases.example.json` is a fictional example set; `npm run eval` runs it for hit@ / MRR / nDCG. A real sample output + a reentry / diary snapshot are in **[docs/EXAMPLE.en.md](./docs/EXAMPLE.en.md)**.
+Three points from this example: memory is retrievable, concern is data-backed, and initiative fires **by affect, not by engagement**. For numbers: `apps/gateway/src/eval/retrieval_cases.example.json` is a fictional example set; `npm run eval` runs it for hit@ / MRR / nDCG. A real sample output + a reentry / diary snapshot are in **[docs/EXAMPLE.en.md](./docs/EXAMPLE.en.md)**.
 
 ## Quick start (local)
 
@@ -54,7 +54,7 @@ npm run dev                   # starts the gateway (HTTP MCP server) on :3001
 
 **No persona ships in this repo.** There is no built-in personality, no example relationship, no word
 lists. You bring your own — `npm run init` walks you through building it. The engine ships empty on
-purpose; that emptiness is the strongest form of de-identification.
+purpose; with no persona content shipped, there is nothing to de-identify.
 
 **No model ships either.** kimi-core has no built-in model — set `KIMI_MODEL` (an OpenRouter slug) for
 LLM calls, `EMBED_MODEL` for semantic search, and `DAEMON_MODEL` (a bare Claude id) only if you run the

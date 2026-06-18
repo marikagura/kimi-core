@@ -2,7 +2,7 @@
 
 # 自审 harness
 
-这个仓库本身就携带了构建它所用的*方法*：一套对抗式、multi-agent 的安全 + 去标识化（de-identification）审计，你可以在部署或公开之前，针对自己的 fork 跑一遍。它不是一个让你盲信的扫描器——它是一支被指令去破门而入的 agent 舰队，**每一项发现在计入之前都要经过行为层面的验证。**
+这个仓库本身就携带了构建它所用的*方法*：一套对抗式、multi-agent 的安全 + 去标识化（de-identification）审计，你可以在部署或公开之前，针对自己的 fork 跑一遍。它是一组被指令做对抗式审计的 agent，**每一项发现在计入之前都要经过行为层面的验证。**
 
 ## 为什么要行为验证，而非静态推断
 
@@ -15,7 +15,7 @@
 
 ## 运行审计（任意 multi-agent runner）
 
-把一支 agent 舰队（例如 Claude Code）指向你的 fork，用类似下面的 prompt：
+把一组 agent（例如 Claude Code）指向你的 fork，用类似下面的 prompt：
 
 > 以对抗者的身份审计这个仓库。并行地，每个面（surface）一个 agent：
 > (1) 凭证与 secrets —— working tree **以及** git history；

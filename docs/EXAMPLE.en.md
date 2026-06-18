@@ -2,7 +2,7 @@
 
 > 中文版: ./EXAMPLE.md
 
-Want to see it alive without installing? Here's real, re-runnable output — not a marketing shot. All example data is fictional (a Helios project, Jordan, a cat named Mochi), not any real person.
+Want to see it alive without installing? Here's real, re-runnable output. All example data is fictional (a Helios project, Jordan, a cat named Mochi), not any real person.
 
 ## 1. retrieval eval (real output)
 
@@ -23,7 +23,7 @@ Want to see it alive without installing? Here's real, re-runnable output — not
 
 **This table is itself a demo of what the eval is for**: literal / keyword / temporal all hit (the trigram arm suffices), but `abstract_core`, `fuzzy_semantic`, `semantic_bridge` are all 0 — those are **pure-semantic** cases that nothing catches without embeddings. Set `OPENAI_API_KEY` and re-run and they come back. `negative` (expectNone) always passes: an irrelevant query returns nothing.
 
-In other words: the numbers **honestly tell you which arm isn't wired** — that's what "numbers you can re-run, not a claim in a README" means. `npm run eval:history` reads the trend back over time.
+In other words: the numbers **honestly tell you which arm isn't wired** — that's what "numbers you can re-run" means. `npm run eval:history` reads the trend back over time.
 
 ## 2. reentry — the context one wake sees (fictional sample)
 

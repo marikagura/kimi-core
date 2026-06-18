@@ -245,7 +245,7 @@ export function registerAllTools(server: McpServer) {
 
   server.tool(
     "memory_search",
-    "Memory search: hybrid scoring — semantic (pgvector) + ILIKE substring (CJK-friendly) + pg_trgm fuzzy (Latin-friendly) + entity-mention edges. Unified ranking, no short-circuit so a deterministic keyword query can outrank a vibe-only cosine neighbor. RESTRICTED excluded by default. includeContent=true returns the full body. Deep recall: scope='full' widens to the observation/profile/RESTRICTED/private pool, rerank=true runs a local cross-encoder re-rank — for oblique / semantic / whole-picture recall where the phrasing doesn't match the stored wording; slower but more precise. Default scope='default'+rerank=false = the fast default pool.",
+    "Memory search: hybrid scoring — semantic (pgvector) + ILIKE substring (CJK-friendly) + pg_trgm fuzzy (Latin-friendly) + entity-mention edges. Unified ranking, no short-circuit so a deterministic keyword query can outrank a cosine-similarity neighbor. RESTRICTED excluded by default. includeContent=true returns the full body. Deep recall: scope='full' widens to the observation/profile/RESTRICTED/private pool, rerank=true runs a local cross-encoder re-rank — for oblique / semantic / whole-picture recall where the phrasing doesn't match the stored wording; slower. Default scope='default'+rerank=false = the fast default pool.",
     {
       query: z.string().describe("Natural-language query — semantic or keyword"),
       memoryType: z.enum(["CORE", "STATE", "EPISODE", "PREFERENCE", "BOUNDARY", "RESTRICTED"]).optional(),
@@ -253,7 +253,7 @@ export function registerAllTools(server: McpServer) {
       limit: z.number().default(10),
       includeContent: z.boolean().default(false).describe("true = return full content body, false = summary or first 200 chars of content"),
       scope: z.enum(["default", "full"]).default("default").describe("full = include observation/profile/RESTRICTED/private pool (only when no memoryType/topicId); default = memories table only, RESTRICTED excluded"),
-      rerank: z.boolean().default(false).describe("true = local cross-encoder re-rank of the survivor pool (slower, better for oblique semantic recall; falls back gracefully to hybrid order if the server is unavailable)"),
+      rerank: z.boolean().default(false).describe("true = local cross-encoder re-rank of the survivor pool (slower; for oblique semantic recall; falls back to hybrid order if the server is unavailable)"),
     },
     async ({ query, memoryType, topicId, limit, includeContent, scope, rerank }) => {
       const body = (m: any) => (includeContent ? m.content : (m.summary || m.content.slice(0, 200)));

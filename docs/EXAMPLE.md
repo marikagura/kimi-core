@@ -2,7 +2,7 @@
 
 # 一份样例：它实际跑出来什么
 
-不想装就想看见它活着？这里是真实的、可重跑的产物——不是宣传图。示例数据全是虚构的（Helios 项目、Jordan、猫 Mochi），不是任何真人。
+不想装就想看见它活着？这里是真实的、可重跑的产物。示例数据全是虚构的（Helios 项目、Jordan、猫 Mochi），不是任何真人。
 
 ## 1. retrieval eval（真实输出）
 
@@ -23,7 +23,7 @@
 
 **这张表本身就在示范 eval 是干嘛的**：literal / 关键词 / 时间类全中（trigram 臂够用），但 `abstract_core`、`fuzzy_semantic`、`semantic_bridge` 全 0——因为这些是**纯语义**的 case，没有 embedding 抓不到。把 `OPENAI_API_KEY` 配上再跑，这几类会回来。`negative`（expectNone）始终通过：无关 query 返回空。
 
-换句话说：数字会**诚实地告诉你哪条臂没接上**——这就是「可重跑的数字，不是 README 里一句声明」的意思。`npm run eval:history` 把每次的趋势读回来。
+换句话说：数字会**显示哪条臂没接上**——这些数字可以自己重跑得到。`npm run eval:history` 把每次的趋势读回来。
 
 ## 2. reentry —— 一次 wake 看到的上下文（虚构示例）
 

@@ -2,7 +2,7 @@
 
 > 中文版: ./PATTERNS.md
 
-These aren't part of the engine — they're the few things you have to get right, repeatedly, when wiring an LLM surface (a chat endpoint, the wake daemon, push). All battle-tested; caching especially, where the traps are **silent** — you won't find them without measuring.
+These aren't part of the engine — they're the few things you have to get right, repeatedly, when wiring an LLM surface (a chat endpoint, the wake daemon, push). Caching especially has traps that are **silent** — you won't find them without measuring.
 
 ## 1. Prompt caching: savings come from the prefix, not the marker
 

@@ -13,7 +13,7 @@
 //                      (redundancy ≠ completeness)
 //   expectNone       — negative control: an irrelevant query must return nothing
 //
-// Numbers you can re-run on your own data — not a claim in a README.
+// Numbers you can re-run on your own data.
 //
 // Labeling is by KEYWORD predicate, not by fixed row-ids: a case lists the words
 // a relevant doc must contain (title/summary/content). This makes the set

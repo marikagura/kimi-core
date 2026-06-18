@@ -4,8 +4,8 @@
 
 This repo ships the *method* that built it: an adversarial, multi-agent
 security + de-identification audit you can run against your own fork before you
-deploy or go public. It is not a scanner you trust — it is a fleet of agents
-told to break in, with **every finding verified behaviorally before it counts.**
+deploy or go public. It is a set of agents told to do adversarial auditing,
+with **every finding verified behaviorally before it counts.**
 
 ## Why behavioral, not static
 

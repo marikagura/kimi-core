@@ -12,8 +12,8 @@
 //
 // Provider is selected by RERANK_PROVIDER (local | cohere | jina | voyage | none).
 //   * local  → self-hosted cross-encoder (bge-reranker-v2-m3). Free, no key, and
-//              memory text never leaves the box — the privacy-safe option for
-//              sensitive content. Endpoint RERANK_LOCAL_URL
+//              memory text never leaves the box, so it is not sent to a third
+//              party for sensitive content. Endpoint RERANK_LOCAL_URL
 //              (default http://127.0.0.1:8787/rerank).
 //   * cohere → Cohere Rerank (rerank-multilingual-v3.0 / rerank-v3.5), key COHERE_API_KEY
 //   * jina   → jina-reranker-v2-base-multilingual,                 key JINA_API_KEY

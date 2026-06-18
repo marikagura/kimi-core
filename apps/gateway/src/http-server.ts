@@ -25,6 +25,12 @@ if (!API_KEY) {
   console.error("FATAL: KIMI_API_KEY is not set. Refusing to start without an API key.");
   process.exit(1);
 }
+if (!process.env.DATABASE_URL) {
+  // Prisma lazily connects, so without this a missing DB only surfaces deep inside
+  // the first tool call (while /health reports ok). Fail at boot instead.
+  console.error("FATAL: DATABASE_URL is not set. Point it at your Postgres (docker compose up -d, or your own). See .env.example.");
+  process.exit(1);
+}
 
 // Global Bearer auth. /health is the only unauthenticated route. There is no
 // OAuth discovery/token flow: clients pass a static `Authorization: Bearer

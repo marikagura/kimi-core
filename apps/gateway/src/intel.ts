@@ -673,6 +673,10 @@ async function runAll() {
 
 // Daily run time is config-driven. Default 09:00 local: keeps the daily decay→sweep
 // →derive pass current before downstream consumers read concern/drive state.
+if (!process.env.DATABASE_URL) {
+  console.error("FATAL: DATABASE_URL is not set. See .env.example.");
+  process.exit(1);
+}
 const DAILY_CRON = process.env.INTEL_DAILY_CRON || "0 9 * * *";
 const CRON_TZ = process.env.KIMI_CRON_TZ ?? DEFAULT_TZ;
 // Wrap so a rejected run (e.g. DB unavailable at cold start) is a logged error, not

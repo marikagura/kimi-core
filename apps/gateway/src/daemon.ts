@@ -349,6 +349,11 @@ async function wake(force = false) {
 
 // ===== scheduler (long-lived; does not burn LLM tokens) =====
 ensureSubscriptionAuth(); // fail fast at startup if the token is missing
+if (!process.env.DATABASE_URL) {
+  console.error("FATAL: DATABASE_URL is not set. See .env.example.");
+  process.exit(1);
+}
+modelFor("DAEMON_MODEL"); // fail fast at startup: a missing wake model would otherwise only error per-wake, inside a swallowed catch, while "wake daemon up" still prints
 setNotifier(getNotifier()); // install the configured notifier (default: console/no-op)
 // Cron schedule is config-driven (default: 09:00 and 21:00 daily, in KIMI_CRON_TZ).
 const WAKE_CRON = process.env.DAEMON_WAKE_CRON || "0 9,21 * * *";

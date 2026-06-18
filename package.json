@@ -5,6 +5,9 @@
   "description": "A personal, single-user agent memory OS (one human, one AI) — an agentic memory + self-drive engine with a built-in adversarial self-audit harness. Principle: trust neither the AI nor yourself — only external evidence.",
   "license": "AGPL-3.0-or-later",
   "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -23,13 +26,13 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
     "turbo": "^2.0.0",
     "typescript": "^5.5.0",
     "vitest": "^4.1.9"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
-    "prisma": "^6.19.3"
+    "prisma": "^6.19.3",
+    "tsx": "^4.19.0"
   }
 }

@@ -2,7 +2,7 @@
 
 # kimi-core
 
-一个 agentic 的记忆 + self-drive 引擎，内置一套对抗式自审 harness。
+一个**个人用的 agent memory OS** —— 一人对一个 AI（1v1）的 agentic 记忆 + self-drive 引擎，内置一套对抗式自审 harness。
 
 关于架构设计请读 **[ARCHITECTURE.md](./ARCHITECTURE.md)**——下面这些都只是零件。
 关于 autonomous-agency 层（cron wake → drive/concern → action selection，DO_NOTHING 是一个选项而非默认 → dispatch），

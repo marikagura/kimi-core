@@ -2,28 +2,30 @@
 
 # Roadmap
 
-如实命名做到了什么、还差什么，而不是暗示。
+如实命名做到了什么、还差什么,而不是暗示。这是一个**个人单用户(1v1)的 agent memory OS** —— 范围按「一个人 + 一个 AI」定,不追多用户 / production 规模。
 
-## 已经在 core 里（落地、有测试、有文档）
+## 已经在 core 里(落地、有测试、有文档)
 
-- **Hybrid retrieval** —— dense（pgvector）+ lexical（trigram / 可选 BM25）+ entity graph walk 四信号加权 + 可选 cross-encoder rerank（带隐私门控）。
-- **self-drive + concern 引擎** —— 四种 SEEKING 形态、**config 驱动的维度**（你自己定义，见 [docs/DRIVES.md](./docs/DRIVES.md)）、concern 的 open / decay / recurrence / grounding。
-- **可复现 eval** —— hit@5 / hit@10 · MRR · nDCG@10 · set-recall@10 · expectNone 负控 · 组件 / rerank A/B · 每跑写趋势 Event（`npm run eval` / `npm run eval:history`）。
-- **autonomous wake daemon** —— cron wake → drive / concern / persona → action selection（DO_NOTHING 是一个选项）→ dispatch，带 HITL propose / auto 旋钮（`daemon.ts` + `intel.ts`，论证见 [docs/AUTONOMY.md](./docs/AUTONOMY.md)）。
+- **Hybrid retrieval** —— dense(pgvector)+ lexical(trigram / 可选 BM25)+ entity graph walk 四信号加权 + 可选 cross-encoder rerank(带隐私门控)。
+- **self-drive + concern 引擎** —— 四种 SEEKING 形态、**config 驱动的维度**(你自己定义,见 [docs/DRIVES.md](./docs/DRIVES.md))、concern 的 open / decay / recurrence / grounding。
+- **可复现 eval** —— hit@5 / hit@10 · MRR · nDCG@10 · set-recall@10 · expectNone 负控 · 组件 / rerank A/B · 每跑写趋势 Event(`npm run eval` / `npm run eval:history`)。
+- **autonomous wake daemon** —— cron wake → drive / concern / persona → action selection(DO_NOTHING 是一个选项)→ dispatch,带 HITL propose / auto 旋钮(`daemon.ts` + `intel.ts`,论证见 [docs/AUTONOMY.md](./docs/AUTONOMY.md))。
+- **对话式 onboarding** —— `npm run init` 是一段对话:访谈你,用你自己的话长出 persona / AGENTS.md 的关系层(从不替你写);有 key 时加自适应追问、无 key 是引导式对话(`scripts/init.ts` + `persona-build.ts`)。
 - **对抗式自审 harness** —— `npm run scrub` 机械去敏闸 + [docs/SELF-AUDIT.md](./docs/SELF-AUDIT.md) 行为级审计。
-- **参考投递 providers** —— 可配置的 Notifier（console / webhook）+ search provider（http），env 驱动、默认关（`lib/providers.ts`，wire 进 daemon）。
-- event-sourcing + append-only + 人工 curation；CI（tsc + test + scrub）。
+- **参考投递 providers** —— 可配置的 Notifier(console / webhook)+ search provider(http),env 驱动、默认关(`lib/providers.ts`,wire 进 daemon)。
+- event-sourcing + append-only + 人工 curation;CI(tsc + test + scrub)。
 
-## 还差什么（刻意尚未纳入 / 未完成）
+## 还差什么(未完成)
 
-- **SQLite 存储后端。** 现在跑在 Postgres + pgvector 上（一个 `DATABASE_URL`，本地 Docker 或任意远端）。一层 repository 抽象 + SQLite + sqlite-vec backend，给一个零依赖的 "lite" 模式（无 Docker、无 server）。reranker 已是插件形态；storage 还不是——下一个该插件化的边界。
-- **规模化检索索引。** 当前检索每查询一次全表打分（单用户体量足够，`retrieval.ts` 里写明）。过约 1 万行该切到候选池 CTE（HNSW + trigram GIN）再打分——ANN 路径还没接。
-- **更多投递 / 搜索集成。** 参考实现已发（webhook notifier、http search provider）；更多开箱即用的具体后端（Slack / Discord / ntfy 预设、特定 search API 适配）仍欢迎。EXPLORE 的建议内容按设计留空（persona 层）。
-- **对话式 onboarding。** `npm run init` 现在是 CLI 问卷；chat 风格的 persona 构建器（persona 真正被养成的方式）是 v2。
+- **SQLite lite 后端。** 现在跑在 Postgres + pgvector 上(一个 `DATABASE_URL`)。一层 storage / 检索后端抽象 + SQLite(sqlite-vec 向量 + FTS5 词法)给一个零依赖的 "lite" 模式:`npm install` 就能跑,不用 Docker、不用 server —— 正合单用户个人场景。检索层的原生 SQL(pgvector `<=>`、pg_trgm、pgroonga)绑死 Postgres,SQLite 等于第二套检索实现,是个多回合工程。**这是下一步的重点。**
+- **更多投递 / 搜索集成。** 参考实现已发(webhook notifier、http search provider);更多开箱即用的具体后端(Slack / Discord / ntfy 预设、特定 search API 适配)仍欢迎。EXPLORE 的建议内容按设计留空(persona 层)。
 
-## v2
+## 非目标
 
-- 对话式 persona 构建器，替代 CLI 问卷。
-- 可插拔 storage（含 SQLite lite 模式）。
-- 规模化检索（ANN 候选池），并把跨版本的 eval 数字发布出来。
-- 更多开箱即用的投递 / 搜索后端预设（Slack / Discord / ntfy / 主流 search API）。
+- **多用户 / production 规模 —— 不做。** 这是个人单用户(1v1)的 memory OS。检索每查询全表打分,在一个人一辈子的记忆体量下足够;ANN 候选池(HNSW 等)路径**刻意不建**。拿去服务很多用户是另一个项目。
+
+## v2(下一步)
+
+- **SQLite lite** —— 零依赖个人模式(下一步的重点,多回合)。
+- 把跨版本的 eval 数字发布出来(回归趋势)。
+- 更多开箱即用的投递 / 搜索后端预设。

@@ -2,7 +2,7 @@
 
 > 中文版: [README.md](./README.md)
 
-An agentic memory + self-drive engine, with a built-in adversarial self-audit harness.
+A **personal, single-user agent memory OS** — an agentic memory + self-drive engine for one human and one AI (1:1), with a built-in adversarial self-audit harness.
 
 For the architecture, read **[ARCHITECTURE.en.md](./ARCHITECTURE.en.md)** — everything below is just parts.
 For the autonomous-agency layer (cron wake → drive/concern → action selection, DO_NOTHING one option not the default → dispatch),

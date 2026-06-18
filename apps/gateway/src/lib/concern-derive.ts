@@ -535,11 +535,22 @@ export async function previewDriveDims(now: Date = new Date()): Promise<{ dims: 
   const groundCutoff = new Date(now.getTime() - GROUND_WINDOW * 86400000);
   const defs = loadDriveDefs();
 
-  // presence anchor — the last chat event (any surface). Only the timestamp is
-  // read as a presence signal; content is not. Loaded once if any dim wants it.
+  // presence anchor — the last real user message on the chat surfaces. Only the
+  // timestamp is read as a presence signal; content is not. Real message sources
+  // only, NOT a broad eventType:"CHAT" query: system arc records (closeout etc.)
+  // are SYSTEM events and must never count as the user being present — this source
+  // filter is belt-and-suspenders against any other non-message CHAT source.
   const needsPresence = defs.some((d) => d.backing.presence === "lastChat");
   const lastChat = needsPresence
-    ? await prisma.event.findFirst({ where: { eventType: "CHAT", createdAt: { lte: now } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } })
+    ? await prisma.event.findFirst({
+        where: {
+          eventType: "CHAT",
+          source: { in: [process.env.GROUND_CHAT_SOURCE ?? "chat", process.env.GROUND_CROSS_CHAT_SOURCE ?? "chat_b"] },
+          createdAt: { lte: now },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      })
     : null;
 
   // user-feedback samples (plan A): (self, external) pairs from SCORE_FEEDBACK

@@ -1268,6 +1268,11 @@ export function registerAllTools(server: McpServer) {
       "- the heaviest few lines said (key quoted phrases)",
       "- carryover: threads left unresolved",
       "",
+      "closeout writes the ARC only — it does NOT write CORE identity facts. Identity",
+      "(who the user is, durable commitments) is written deliberately mid-session via",
+      "memory_write; keyMemories cannot be CORE. The session-end event is a SYSTEM",
+      "marker, not a chat turn — it never counts as the user being present.",
+      "",
       "Importance rules for keyMemories:",
       "1. Pure system/technical memory → importance 3.",
       "2. Important technical progress goes in active_state(PROJECT), not memory.",
@@ -1282,7 +1287,7 @@ export function registerAllTools(server: McpServer) {
             title: z.string(),
             summary: z.string().describe("Summary, <=300 chars. (1) do not repeat title (2) cover the full arc — cause / course / conclusion (3) keep the most important concrete details (numbers / names / key quoted phrases) (4) note any unresolved carryover."),
             content: z.string(),
-            memoryType: z.enum(["CORE", "STATE", "EPISODE", "PREFERENCE", "BOUNDARY", "RESTRICTED"]).default("EPISODE"),
+            memoryType: z.enum(["STATE", "EPISODE", "PREFERENCE", "BOUNDARY", "RESTRICTED"]).default("EPISODE").describe("closeout never writes CORE — identity facts are written deliberately mid-session via memory_write, not bulk-dumped at closeout."),
             importance: z.number().min(1).max(5).default(3),
             topicSlug: z.string().optional(),
             valence: z.number().min(-1).max(1).optional().describe("This memory's closing valence (-1~1). Used by satiety logic to judge how the session settled."),
@@ -1578,8 +1583,11 @@ export function registerAllTools(server: McpServer) {
         results.push(`${genuinelyRecalled.length} memories activation incremented`);
       }
 
+      // System arc marker — NOT a user message. Kept off eventType:"CHAT" so no
+      // presence / last-activity reader (drive grounding, daemon ground truth) ever
+      // mistakes the closeout write for the user actually speaking.
       await prisma.event.create({
-        data: { eventType: "CHAT", value: `Session closed: ${episodeTitle}`, source: "closeout" },
+        data: { eventType: "SYSTEM", value: `Session closed: ${episodeTitle}`, source: "closeout" },
       });
       results.push("Session end event logged");
 

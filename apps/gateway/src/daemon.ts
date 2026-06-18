@@ -2,7 +2,7 @@ import "dotenv/config";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import cron from "node-cron";
 import prisma from "./db.js";
-import { jst } from "./time.js";
+import { localDateTime, localDate, localWeekday } from "./time.js";
 import { buildPersona } from "@kimi/context-core";
 import { ensureSubscriptionAuth, buildGroundTruth } from "./lib/daemon-core.js";
 import { dispatchAction, ActionType, type AutonomyMode } from "./lib/agency.js";
@@ -135,21 +135,12 @@ async function marker(source: string, value: Record<string, unknown>) {
   }
 }
 
-const WEEKDAY_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-function localWeekday(now = new Date()): string {
-  return WEEKDAY_EN[new Date(now.getTime() + tzOffsetMs()).getUTCDay()];
-}
-// Display-timezone offset in ms, read from KIMI_TZ_OFFSET_HOURS (default 0 = UTC).
-function tzOffsetMs(): number {
-  return (parseFloat(process.env.KIMI_TZ_OFFSET_HOURS || "0") || 0) * 3600_000;
-}
-
 // user prompt — current time + ground-truth snapshot + self-fetch hints + JSON.
 function buildWakePrompt(now: Date, ground: string): string {
-  const nowLabel = jst(now).slice(0, 16);
+  const nowLabel = localDateTime(now).slice(0, 16);
   const wd = localWeekday(now);
-  const hh = String(new Date(now.getTime() + tzOffsetMs()).getUTCHours()).padStart(2, "0");
-  const dateStr = jst(now).slice(0, 10);
+  const hh = localDateTime(now).slice(11, 13);
+  const dateStr = localDate(now);
   return `## Now
 ${nowLabel} (${wd}).
 
@@ -227,7 +218,7 @@ function parseWakeJson(response: string): any {
 async function wake(force = false) {
   ensureSubscriptionAuth();
   const now = new Date();
-  const ts = jst(now).slice(0, 16);
+  const ts = localDateTime(now).slice(0, 16);
 
   // 30-minute cooldown — guard against crash-restart loops burning tokens.
   // Manual runs (force=true) skip it.
@@ -238,12 +229,12 @@ async function wake(force = false) {
   const hoursSince = lastWake ? (Date.now() - lastWake.createdAt.getTime()) / 3600_000 : 999;
   if (!force && hoursSince < 0.5) {
     console.log(`[${ts}] skip: cooldown ${(hoursSince * 60).toFixed(0)}m`);
-    await marker("daemon_skip", { ts: jst(now), reason: "cooldown", hoursSinceLast: +hoursSince.toFixed(2) });
+    await marker("daemon_skip", { ts: localDateTime(now), reason: "cooldown", hoursSinceLast: +hoursSince.toFixed(2) });
     return;
   }
 
   await marker("daemon_wake", {
-    ts: jst(now),
+    ts: localDateTime(now),
     reason: "cron",
     hoursSinceLast: lastWake ? +hoursSince.toFixed(2) : null,
   });
@@ -301,7 +292,7 @@ async function wake(force = false) {
     if (blocked.length) console.log(`[${ts}] blocked (denied by dontAsk, not executed): ${blocked.join(", ")}`);
     if (!result) {
       console.error(`[${ts}] empty result`);
-      await marker("daemon_error", { ts: jst(now), error: "empty result from query()" });
+      await marker("daemon_error", { ts: localDateTime(now), error: "empty result from query()" });
       return;
     }
 
@@ -309,7 +300,7 @@ async function wake(force = false) {
 
     // monologue marker — always (observability of the decision + retrieval behavior).
     await marker("daemon_monologue", {
-      ts: jst(now),
+      ts: localDateTime(now),
       monologue: parsed.monologue ?? null,
       action: parsed.action ?? null,
       valence: typeof parsed.valence === "number" ? parsed.valence : null,
@@ -324,7 +315,7 @@ async function wake(force = false) {
     // search provider is injected so WEBSEARCH can actually act when configured (default no-op).
     const actionResult = await dispatchAction(parsed.action, { parsed, now, search: getSearchProvider() }, AUTONOMY_MODE);
     await marker("daemon_action", {
-      ts: jst(now),
+      ts: localDateTime(now),
       type: actionResult.type,
       performed: actionResult.performed,
       outcome: actionResult.outcome,
@@ -337,14 +328,14 @@ async function wake(force = false) {
       const slug = parsed.push.slug.trim().toLowerCase();
       if (AUTONOMY_MODE === "auto") {
         await notifier.send({ content: parsed.push.content, slug, priority: "high" });
-        await marker("daemon_notify", { ts: jst(now), slug, sent: true });
+        await marker("daemon_notify", { ts: localDateTime(now), slug, sent: true });
       } else {
-        await marker("daemon_notify_proposed", { ts: jst(now), slug, content: parsed.push.content, sent: false });
+        await marker("daemon_notify_proposed", { ts: localDateTime(now), slug, content: parsed.push.content, sent: false });
         console.log(`[${ts}] notify PROPOSED (not sent — propose mode) ${slug}: ${parsed.push.content.slice(0, 60)}`);
       }
     } else {
       await marker("daemon_no_push", {
-        ts: jst(now),
+        ts: localDateTime(now),
         reason: parsed.no_push_reason ?? null,
         flag: parsed.no_push_reason ? "intentional" : "no_reason_given",
       });
@@ -354,7 +345,7 @@ async function wake(force = false) {
     console.log(`[${ts}] action=${parsed.action} mono="${(parsed.monologue || "").slice(0, 40)}"`);
   } catch (err: any) {
     console.error(`[${ts}] wake error:`, err?.message || err);
-    await marker("daemon_error", { ts: jst(now), error: String(err?.message || err) });
+    await marker("daemon_error", { ts: localDateTime(now), error: String(err?.message || err) });
   }
 }
 
@@ -363,7 +354,7 @@ ensureSubscriptionAuth(); // fail fast at startup if the token is missing
 setNotifier(getNotifier()); // install the configured notifier (default: console/no-op)
 // Cron schedule is config-driven (default: 14:00 and 23:00 daily).
 const WAKE_CRON = process.env.DAEMON_WAKE_CRON || "0 9,21 * * *";
-const WAKE_TZ = process.env.KIMI_CRON_TZ || "UTC";
+const WAKE_TZ = process.env.KIMI_CRON_TZ || "Asia/Shanghai";
 cron.schedule(WAKE_CRON, () => {
   wake().catch((e) => console.error("[daemon] cron error:", e?.message || e));
 }, { timezone: WAKE_TZ });

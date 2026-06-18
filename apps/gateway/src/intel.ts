@@ -696,7 +696,7 @@ async function runAll() {
 // Daily run time is config-driven. Default 09:00 local: keeps the daily decay→sweep
 // →derive pass current before downstream consumers read concern/drive state.
 const DAILY_CRON = process.env.INTEL_DAILY_CRON || "0 9 * * *";
-const CRON_TZ = process.env.KIMI_CRON_TZ ?? "UTC";
+const CRON_TZ = process.env.KIMI_CRON_TZ ?? "Asia/Shanghai";
 cron.schedule(DAILY_CRON, runAll, { timezone: CRON_TZ });
 runAll();
 

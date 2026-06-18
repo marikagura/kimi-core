@@ -1,11 +1,12 @@
 // Human-facing datetime formatter for context-core.
 //
 // Mirrors the gateway's time.ts: display timezone comes from the KIMI_TZ env var
-// (IANA name, e.g. "America/New_York"), defaulting to UTC. context-core is a
-// standalone package, so it carries its own small copy rather than importing
-// across a package boundary. DB storage stays UTC — only convert on display.
+// (IANA name, e.g. "Asia/Shanghai", "America/New_York"), defaulting to
+// Asia/Shanghai (China). context-core is a standalone package, so it carries its
+// own small copy rather than importing across a package boundary. DB storage stays
+// UTC — only convert on display.
 
-const TZ = process.env.KIMI_TZ || "UTC";
+const TZ = process.env.KIMI_TZ || "Asia/Shanghai";
 
 const _fmt = (opts: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat("sv-SE", { timeZone: TZ, ...opts });

@@ -290,11 +290,11 @@ ${appText || "- none"}`;
 
   // ── Time block (no cache; always fresh) ─────────────────────────────
   // Datetime + weekday both honor the configured display timezone (KIMI_TZ,
-  // default UTC). Formatting is routed through ./time.js; the weekday is derived
-  // in the same timezone via Intl so the two never disagree.
+  // default Asia/Shanghai). Formatting is routed through ./time.js; the weekday is
+  // derived in the same timezone via Intl so the two never disagree.
   const localNow = localDateTime(new Date());
   const localWeekday = new Intl.DateTimeFormat("en-US", {
-    timeZone: process.env.KIMI_TZ || "UTC",
+    timeZone: process.env.KIMI_TZ || "Asia/Shanghai",
     weekday: "short",
   }).format(new Date());
 

@@ -141,7 +141,7 @@ async function main(): Promise<void> {
 
   // ── modules ──────────────────────────────────────────────
   const rerank = await ask("\nReranker provider (none / local / cohere / jina / voyage)?", "none");
-  const tz = await ask("显示时区 (IANA 名,如 UTC / America/New_York)?", "UTC");
+  const tz = await ask("显示时区 (IANA 名,如 Asia/Shanghai / America/New_York)?", "Asia/Shanghai");
 
   // ── models (bring your own — the repo ships none) ─────────
   say(

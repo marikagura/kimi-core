@@ -28,7 +28,7 @@
 //   There is no "keep the user here" path in this registry, by construction.
 
 import prisma from "../db.js";
-import { jst } from "../time.js";
+import { localDateTime } from "../time.js";
 import { recalibrateValence, type ValenceSample } from "./concern-derive.js";
 
 // ── action vocabulary ────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ registerAction({
       const markerId = await writeDecisionMarker(ActionType.DIARY, "skipped", "empty body", ctx);
       return { type: ActionType.DIARY, performed: false, outcome: "skipped", detail: "empty body", markerId };
     }
-    const ts = jst(now).slice(0, 16);
+    const ts = localDateTime(now).slice(0, 16);
     const concernSlug =
       typeof parsed.concern_topic === "string" && parsed.concern_topic.trim()
         ? parsed.concern_topic.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_")
@@ -353,7 +353,7 @@ registerAction({
       const markerId = await writeDecisionMarker(ActionType.NOTE, "skipped", "empty body", ctx);
       return { type: ActionType.NOTE, performed: false, outcome: "skipped", detail: "empty body", markerId };
     }
-    const ts = jst(now).slice(0, 16);
+    const ts = localDateTime(now).slice(0, 16);
     const item = await prisma.pendingItem.create({
       data: { pendingType: "DIARY_NOTE", title: `note ${ts}`, content: body },
       select: { id: true },
@@ -501,7 +501,7 @@ registerAction({
       const markerId = await writeDecisionMarker(ActionType.EXPLORE, "skipped", reason, ctx);
       return { type: ActionType.EXPLORE, performed: false, outcome: "skipped", detail: reason, markerId };
     }
-    const ts = jst(now).slice(0, 16);
+    const ts = localDateTime(now).slice(0, 16);
 
     // propose mode (HITL): stage the suggestion as a pending item for review.
     if (modeOf(ctx) === "propose") {

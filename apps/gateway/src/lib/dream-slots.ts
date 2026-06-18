@@ -12,6 +12,7 @@
 // dreamSlots.*).
 
 import prisma from "../db.js";
+import { tzOffsetMs } from "../time.js";
 
 // Local-clock hours at which briefing wakes are scheduled.
 export const SLOT_HOURS_LOCAL: number[] = (() => {
@@ -24,9 +25,6 @@ export const SLOT_HOURS_LOCAL: number[] = (() => {
   return [9, 21];
 })();
 
-// UTC offset (hours) of the local clock the slots are expressed in.
-const TZ_OFFSET_HOURS = Number(process.env.TZ_OFFSET_HOURS ?? 0);
-
 // A slot only counts as "should have fired" once it's GRACE_MS past (a wake
 // takes time; give margin). Misses older than WINDOW_MS are NOT chased — if the
 // box was down for hours we don't want a stale catch-up firing a useless late
@@ -36,12 +34,14 @@ const WINDOW_MS = Number(process.env.DREAM_WINDOW_HOURS ?? 3) * 60 * 60 * 1000;
 
 // UTC instant of `hh:00` local on the local-calendar date of `now` (+dayOffset).
 function slotInstant(now: Date, hh: number, dayOffset: number): Date {
-  const local = new Date(now.getTime() + TZ_OFFSET_HOURS * 3600_000);
+  // Offset derived from KIMI_TZ — one source of truth, no separate offset env.
+  const off = tzOffsetMs(now);
+  const local = new Date(now.getTime() + off);
   const y = local.getUTCFullYear();
   const m = local.getUTCMonth();
   const d = local.getUTCDate();
   // hh:00 local == that wall time minus the offset in UTC.
-  return new Date(Date.UTC(y, m, d + dayOffset, hh, 0, 0, 0) - TZ_OFFSET_HOURS * 3600_000);
+  return new Date(Date.UTC(y, m, d + dayOffset, hh, 0, 0, 0) - off);
 }
 
 // The most recent slot instant <= now. Includes yesterday's last slot so the

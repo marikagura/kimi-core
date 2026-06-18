@@ -15,7 +15,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import prisma from "./db.js";
-import { jst, jstDate, localDate } from "./time.js";
+import { localDateTime, localDate } from "./time.js";
 import { embedText, toVectorLiteral } from "./lib/embed.js";
 import { scoreMemories } from "./lib/retrieval.js";
 import { sweepMemoryMentions } from "./lib/entity-mentions.js";
@@ -396,7 +396,7 @@ export function registerAllTools(server: McpServer) {
         ? memories
             .map(
               (m) =>
-                `[${m.memoryType}] ${m.title} (importance: ${m.importance}, ${jstDate(m.createdAt)})\n${body(m)}`,
+                `[${m.memoryType}] ${m.title} (importance: ${m.importance}, ${localDate(m.createdAt)})\n${body(m)}`,
             )
             .join("\n\n---\n\n")
         : "No memories found.";
@@ -627,7 +627,7 @@ export function registerAllTools(server: McpServer) {
       });
       if (!events.length) return { content: [{ type: "text", text: "No events." }] };
       const text = events
-        .map((e) => `[${jst(e.createdAt)}] [${e.eventType}${e.source ? "/" + e.source : ""}] ${(e.value || "").slice(0, 240)}`)
+        .map((e) => `[${localDateTime(e.createdAt)}] [${e.eventType}${e.source ? "/" + e.source : ""}] ${(e.value || "").slice(0, 240)}`)
         .join("\n");
       return { content: [{ type: "text", text }] };
     },
@@ -1044,7 +1044,7 @@ export function registerAllTools(server: McpServer) {
 
       ctx += "\n\n## Recent Events\n\n";
       ctx += recentEvents.length
-        ? recentEvents.map((e) => `- [${e.eventType}] ${e.value || ""} (${jst(e.createdAt)})`).join("\n")
+        ? recentEvents.map((e) => `- [${e.eventType}] ${e.value || ""} (${localDateTime(e.createdAt)})`).join("\n")
         : "No recent events.\n";
 
       // Boot marker — gives reentry_delta a "this window's start" anchor (placed
@@ -1094,7 +1094,7 @@ export function registerAllTools(server: McpServer) {
         });
         if (lastDelta) {
           since = lastDelta.createdAt;
-          anchorSrc = `last reentry_delta (${jst(lastDelta.createdAt)})`;
+          anchorSrc = `last reentry_delta (${localDateTime(lastDelta.createdAt)})`;
         } else {
           // First look for a same-tag boot anchor (dropped by reentry with a
           // tag); else fall back to the global latest boot. The global fallback
@@ -1115,7 +1115,7 @@ export function registerAllTools(server: McpServer) {
           }
           if (lastReentry) {
             since = lastReentry.createdAt;
-            anchorSrc = `${bootSrc} (${jst(lastReentry.createdAt)})`;
+            anchorSrc = `${bootSrc} (${localDateTime(lastReentry.createdAt)})`;
           } else {
             since = new Date(Date.now() - 360 * 60_000);
             anchorSrc = "fallback 6h (no marker)";
@@ -1187,7 +1187,7 @@ export function registerAllTools(server: McpServer) {
         return m.summary || fb;
       };
 
-      let ctx = `# Re-entry Delta\n\nSince ${jst(since)} (anchor: ${anchorSrc}, tag=${chainTag})\n`;
+      let ctx = `# Re-entry Delta\n\nSince ${localDateTime(since)} (anchor: ${anchorSrc}, tag=${chainTag})\n`;
       let any = false;
 
       if (states.length) {
@@ -1236,10 +1236,10 @@ export function registerAllTools(server: McpServer) {
       if (events.length) {
         any = true;
         ctx += "\n\n## Events Δ\n\n";
-        ctx += events.map((e) => `- [${e.eventType}] ${e.value || ""} (${jst(e.createdAt)})`).join("\n");
+        ctx += events.map((e) => `- [${e.eventType}] ${e.value || ""} (${localDateTime(e.createdAt)})`).join("\n");
       }
 
-      if (!any) ctx += `\nNothing new since ${jst(since)}.`;
+      if (!any) ctx += `\nNothing new since ${localDateTime(since)}.`;
 
       // Advance the marker chain — only on a default (no explicit override) call.
       if (!explicit) {

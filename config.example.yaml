@@ -61,8 +61,8 @@ reranker:
 
 # ---------- time / timezone (tunable) ----------
 time:
-  displayTimezone: "UTC"         # human-readable output timezone, change per deployment
-  tzOffsetHours: 0               # hour offset from UTC, keep consistent with the timezone above
+  displayTimezone: "Asia/Shanghai"  # → KIMI_TZ env; IANA name, output timezone (default China)
+  # (no separate offset knob — the numeric offset is derived from KIMI_TZ at runtime)
 
 # ---------- cost-log (tunable, adjust to current model prices) ----------
 # Unit price: per million tokens, USD (USD per 1M tokens). Update per actual rate card.

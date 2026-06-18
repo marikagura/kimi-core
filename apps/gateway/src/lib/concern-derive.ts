@@ -7,6 +7,7 @@
 
 import prisma from "../db.js";
 import { driveBoostByDim } from "./thought-pool.js";
+import { localDate } from "../time.js";
 
 export function slugify(s: string): string {
   return (
@@ -81,7 +82,10 @@ export async function deriveConcerns(opts: { dryRun?: boolean } = {}): Promise<D
     if (list.every((m) => m.memoryType === "SELF_SCORE")) {
       const negs = list.filter((m) => (m.valence ?? 0) <= SS_NEG_VALENCE);
       if (negs.length === 0) continue;
-      const days = new Set(negs.map((m) => (m.validFrom ?? m.createdAt).toISOString().slice(0, 10)));
+      // Count distinct days in the configured timezone (localDate), NOT UTC — the
+      // recurrence gate's "across >= N days" must use the same day boundary as the
+      // rest of the engine, or a late-night session can land on the wrong UTC day.
+      const days = new Set(negs.map((m) => localDate(m.validFrom ?? m.createdAt)));
       // strong single (v <= SS_STRONG_NEG) stands up immediately; weak negatives
       // need >= SS_MIN_COUNT across >= SS_MIN_DAYS days
       const strongSingle = negs.some((m) => (m.valence ?? 0) <= SS_STRONG_NEG);
@@ -427,8 +431,12 @@ export function foldDim(
   // apply bonding satiety pressing the recency leg (just closed a bond, less
   // urgent to reopen), but not the want leg (it returns after a few days).
   let bondSat = 0;
-  if (opts.bondSatMode && times.length) {
-    const latest = backing[times.indexOf(Math.max(...times))];
+  if (opts.bondSatMode && backing.length) {
+    // Latest backing row by event date — computed over `backing` only, NOT the
+    // presence-augmented `times` (presenceAt is appended to `times`, so indexing
+    // back into `backing` could land out of bounds and silently disable satiety).
+    const latest = backing.reduce((a, b) =>
+      ((b.validFrom ?? b.createdAt).getTime() > (a.validFrom ?? a.createdAt).getTime() ? b : a), backing[0]);
     if (latest?.bondClosure && (latest.valence ?? 0) > 0) bondSat = BOND_BETA * Math.min(1, latest.valence!);
   }
   const drive = opts.wantOnly
@@ -441,11 +449,12 @@ export function foldDim(
   return { grounding, daysSinceLast, confidence: grounding * drive, n: backing.length };
 }
 
-// Find the "owed start": the first valid date (in appearance order, usually at
-// the start of the content). Supports MMDD / M-D / M/D. state.startAt is the
-// cleanup time and not trustworthy. The year is inferred from now: parse as the
-// current year first; if that lands more than 30 days in the future it's
-// actually last year's date, so roll back a year.
+// Find the "owed start": the first date token (MMDD / M-D / M/D) in the text.
+// state.startAt is the cleanup time and not trustworthy. An owed/debt origin is in
+// the PAST, so a bare date is read as its most-recent past occurrence: parse as the
+// current year; if that lands in the future, it is last year's date. (No 30-day
+// window — a current-year date 5 or 40 days ahead would otherwise give a negative
+// or a year-inflated age. Owed dates must be past-dated.)
 function firstPromiseDate(text: string, fallback: Date, now: Date = new Date()): Date {
   for (const m of text.matchAll(/\b(\d{2})(\d{2})\b|(\d{1,2})[-/](\d{1,2})/g)) {
     const mo = m[1] ? +m[1] : +m[3];
@@ -453,7 +462,7 @@ function firstPromiseDate(text: string, fallback: Date, now: Date = new Date()):
     if (mo < 1 || mo > 12 || day < 1 || day > 31) continue;
     const y = now.getUTCFullYear();
     const d = new Date(Date.UTC(y, mo - 1, day));
-    return d.getTime() > now.getTime() + 30 * 86400000 ? new Date(Date.UTC(y - 1, mo - 1, day)) : d;
+    return d.getTime() > now.getTime() ? new Date(Date.UTC(y - 1, mo - 1, day)) : d;
   }
   return fallback;
 }

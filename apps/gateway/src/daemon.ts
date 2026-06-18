@@ -8,6 +8,7 @@ import { ensureSubscriptionAuth, buildGroundTruth } from "./lib/daemon-core.js";
 import { dispatchAction, ActionType, type AutonomyMode } from "./lib/agency.js";
 import { getNotifier, getSearchProvider } from "./lib/providers.js";
 import { modelFor } from "./lib/models.js";
+import { firstJsonObject } from "./lib/json-extract.js";
 
 // ============================================================================
 // wake daemon — a timer-driven, read-only agent loop.
@@ -188,12 +189,9 @@ function parseWakeJson(response: string): any {
     .replace(/```\s*$/i, "")
     .trim();
   const textToParse = cleaned.startsWith("{") ? cleaned : response;
-  try {
-    const match = textToParse.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
-  } catch {
-    /* fall through to regex */
-  }
+  const obj = firstJsonObject(textToParse);
+  if (obj) return obj;
+  /* fall through to the field-by-field regex below */
   const mon = textToParse.match(/"monologue"\s*:\s*"([\s\S]*?)"\s*,\s*"action"/);
   const act = textToParse.match(/"action"\s*:\s*"([A-Za-z_]+)"/);
   const actC = textToParse.match(/"action_content"\s*:\s*"([\s\S]*?)"\s*,\s*"push"/);

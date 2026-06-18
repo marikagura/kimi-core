@@ -9,6 +9,7 @@ import prisma from "../db.js";
 import { driveBoostByDim } from "./thought-pool.js";
 import { localDate } from "../time.js";
 import { CHAT_SOURCE, CROSS_CHAT_SOURCE } from "@kimi/context-core";
+import { firstJsonObject } from "./json-extract.js";
 
 export function slugify(s: string): string {
   return (
@@ -257,9 +258,8 @@ export async function sweepConcerns(
       console.warn(`[self-sweep] empty LLM response for "${key}" — default linger (check LLM key / provider)`);
     } else {
       try {
-        const match = raw.match(/\{[\s\S]*\}/);
-        if (match) {
-          const parsed = JSON.parse(match[0]);
+        const parsed = firstJsonObject(raw);
+        if (parsed) {
           if (parsed.verdict === "resolved" || parsed.verdict === "active") verdict = parsed.verdict;
           evidenceNote = String(parsed.evidence ?? "");
         } else {

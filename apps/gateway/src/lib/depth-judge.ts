@@ -12,6 +12,7 @@
 import prisma from "../db.js";
 import { callLLMShort } from "./llm.js";
 import { roleModel } from "./models.js";
+import { firstJsonObject } from "./json-extract.js";
 
 // Topic slug used to mark depth memories across all write paths. Tunable. Exported
 // as the single definition — concern-derive's bonding-dim backing imports it.
@@ -51,7 +52,7 @@ export async function tagDepthIfNeeded(mem: {
     if (!["CORE", "EPISODE"].includes(mem.memoryType)) return; // only the two types depth can land in
     const user = `[${mem.memoryType}] ${mem.title} — ${mem.content.slice(0, 220).replace(/\s+/g, " ")}`;
     const raw = await callLLMShort(DEPTH_JUDGE_ONE_SYSTEM, user, { model: roleModel("DEPTH_JUDGE_MODEL"), maxTokens: 30 });
-    const isDepth = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? "{}").depth === true;
+    const isDepth = firstJsonObject(raw)?.depth === true;
     if (!isDepth) return;
     const topic = await prisma.topic.upsert({
       where: { slug: DEPTH_TOPIC_SLUG },

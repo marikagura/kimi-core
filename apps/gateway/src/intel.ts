@@ -10,6 +10,7 @@ import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from 
 import { checkDimHealth } from "./lib/dim-health.js";
 import { roleModel } from "./lib/models.js";
 import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
+import { firstJsonObject } from "./lib/json-extract.js";
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY!;
 // No built-in model — every model is the deployer's own (KIMI_MODEL, with optional
@@ -65,36 +66,27 @@ async function callLLM(system: string, user: string, maxTokens = 2000, modelOver
 }
 
 function parseCandidates(response: string): any[] {
+  // New format: {candidates: [...], sessionScore: {...}}
+  const obj = firstJsonObject(response);
+  if (obj && Array.isArray(obj.candidates)) return obj.candidates;
+  // Fallback: old format (bare array)
   try {
-    // Try new format: {candidates: [...], sessionScore: {...}}
-    const objMatch = response.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      const obj = JSON.parse(objMatch[0]);
-      if (Array.isArray(obj.candidates)) return obj.candidates;
-    }
-    // Fallback: old format (bare array)
     const arrMatch = response.match(/\[[\s\S]*\]/);
-    if (!arrMatch) return [];
-    return JSON.parse(arrMatch[0]);
+    return arrMatch ? JSON.parse(arrMatch[0]) : [];
   } catch {
     return [];
   }
 }
 
 function parseSessionScore(response: string): { valence: number; arousal: number; note: string } | null {
-  try {
-    const objMatch = response.match(/\{[\s\S]*\}/);
-    if (!objMatch) return null;
-    const obj = JSON.parse(objMatch[0]);
-    // Main call wraps as { sessionScore: {...} }; retry call returns {valence, arousal, note} bare.
-    const score = obj.sessionScore ?? obj;
-    if (score && typeof score.valence === "number" && typeof score.arousal === "number") {
-      return { valence: score.valence, arousal: score.arousal, note: score.note ?? "" };
-    }
-    return null;
-  } catch {
-    return null;
+  const obj = firstJsonObject(response);
+  if (!obj) return null;
+  // Main call wraps as { sessionScore: {...} }; retry call returns {valence, arousal, note} bare.
+  const score = obj.sessionScore ?? obj;
+  if (score && typeof score.valence === "number" && typeof score.arousal === "number") {
+    return { valence: score.valence, arousal: score.arousal, note: score.note ?? "" };
   }
+  return null;
 }
 
 // When the main call returns candidates=[] it often drops sessionScore too. This
@@ -431,8 +423,7 @@ Output JSON (JSON only, no markdown fence):
           console.warn(`[dialogue_digest] ${dateStr} callLLM attempt ${attempts} threw: ${err?.message ?? err}`);
           raw = "";
         }
-        const match = raw.match(/\{[\s\S]*\}/);
-        try { p = match ? JSON.parse(match[0]) : {}; } catch { p = {}; }
+        p = firstJsonObject(raw) ?? {};
         if (p.summary) break;
         if (attempts < 2) {
           console.warn(`[dialogue_digest] ${dateStr} attempt ${attempts} no summary (raw_len=${raw.length}), retrying`);

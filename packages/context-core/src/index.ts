@@ -21,11 +21,13 @@
 
 import type { PrismaClient } from "@prisma/client";
 import { localDateTime } from "./time.js";
-import { CHAT_SOURCE, CROSS_CHAT_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE, CHAT_DIGEST_WHERE, parseChatEvent } from "./sources.js";
+import { CHAT_SOURCE, CROSS_CHAT_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE, CHAT_DIGEST_WHERE, parseChatEvent, SENSITIVE_TITLE_OR, PRIVATE_TITLE_PREFIX } from "./sources.js";
 
-// Re-export the shared source / event-identity constants so the gateway imports
-// them from "@kimi/context-core" rather than re-deriving (and drifting from) them.
+// Re-export the shared source / event-identity constants + the canonical time
+// formatters so the gateway imports them from "@kimi/context-core" rather than
+// re-deriving (and drifting from) them.
 export * from "./sources.js";
+export * from "./time.js";
 
 export type Surface = "cc" | "tg" | "voice" | "chatroom";
 
@@ -155,7 +157,7 @@ export async function loadAnchors(prisma: PrismaClient): Promise<AnchorItem[]> {
   return prisma.memory.findMany({
     where: {
       isActive: true,
-      NOT: { OR: [{ title: { startsWith: "[cred_]" } }, { title: { startsWith: "[private_" } }] },
+      NOT: SENSITIVE_TITLE_OR,
       OR: [
         { memoryType: "CORE", importance: { gte: 4 } },
         { memoryType: "BOUNDARY", importance: { gte: 4 } },
@@ -184,7 +186,7 @@ export async function loadPrivate(prisma: PrismaClient, opts: ContextOpts): Prom
         })
       : Promise.resolve([] as PrivateAnchor[]),
     prisma.memory.findMany({
-      where: { isActive: true, title: { startsWith: "[private_" } },
+      where: { isActive: true, title: { startsWith: PRIVATE_TITLE_PREFIX } },
       select: { memoryType: true, title: true, content: true, summary: true, importance: true },
       orderBy: [{ importance: "desc" }, { createdAt: "desc" }],
     }),

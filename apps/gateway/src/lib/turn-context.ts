@@ -22,8 +22,8 @@
 
 import { Prisma } from "@prisma/client";
 import prisma from "../db.js";
-import { localDate, localDateTime } from "../time.js";
-import { loadStates, loadObservations, loadEntities, loadTopics, loadRegisters, loadDigests, loadEvents, loadProfile } from "@kimi/context-core";
+import { localDate, localDateTime, localWeekday } from "../time.js";
+import { loadStates, loadObservations, loadEntities, loadTopics, loadRegisters, loadDigests, loadEvents, loadProfile, SENSITIVE_TITLE_OR } from "@kimi/context-core";
 
 export interface TurnContextOptions {
   source: string;
@@ -85,7 +85,7 @@ export async function buildTurnContext(opts: TurnContextOptions): Promise<TurnCo
       isActive: true,
       // [cred_] credentials must not enter the injected context; [private_ is
       // excluded here so it is not duplicated under the 300-char truncation.
-      NOT: { OR: [{ title: { startsWith: "[cred_]" } }, { title: { startsWith: "[private_" } }] },
+      NOT: SENSITIVE_TITLE_OR,
       OR: [
         { memoryType: "CORE", importance: { gte: 4 } },
         { memoryType: "BOUNDARY", importance: { gte: 4 } },
@@ -293,10 +293,7 @@ ${appText || "- none"}`;
   // default Asia/Shanghai). Formatting is routed through ./time.js; the weekday is
   // derived in the same timezone via Intl so the two never disagree.
   const localNow = localDateTime(new Date());
-  const localWeekday = new Intl.DateTimeFormat("en-US", {
-    timeZone: process.env.KIMI_TZ || "Asia/Shanghai",
-    weekday: "short",
-  }).format(new Date());
+  const weekday = localWeekday(new Date());
 
   // ttl 1h: messages can be 5min-1h apart; a default 5min TTL would rewrite the
   // prefix several times an hour. A 1h TTL only pays the write price for the
@@ -317,7 +314,7 @@ ${appText || "- none"}`;
     { type: "text", text: blockProfile,  cache_control: TTL_1H },
     { type: "text", text: blockMemories, cache_control: TTL_1H },
   ];
-  const dynamicText = `${blockDynamic}\n\nNow: ${localNow} (${localWeekday})`;
+  const dynamicText = `${blockDynamic}\n\nNow: ${localNow} (${weekday})`;
 
-  return { systemBlocks, dynamicText, localNow, localWeekday };
+  return { systemBlocks, dynamicText, localNow, localWeekday: weekday };
 }

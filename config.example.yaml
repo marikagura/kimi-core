@@ -76,10 +76,10 @@ pricing:
 # Neutral default conversation register used when assembling context; adjust as needed.
 context:
   registerDefaults:
-    mode: "MIXED"                # conversation mode
-    verbosity: "MEDIUM"          # verbosity
-    initiative: "LOW"            # initiative
-    comfort: "EXPLAIN"           # explanation tendency
+    mode: "default"              # matches the code default (context-core registerDefaults)
+    verbosity: "balanced"        # verbosity
+    initiative: "responsive"     # initiative
+    comfort: "neutral"           # explanation tendency
 
 # ---------- self-drive / concern cognitive engine (tunable, neutral defaults) ----------
 # This group drives the self-drive (positive, multi-dimensional wanting) + concern

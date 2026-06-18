@@ -2,7 +2,7 @@ import "dotenv/config";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import cron from "node-cron";
 import prisma from "./db.js";
-import { localDateTime, localDate, localWeekday } from "./time.js";
+import { localDateTime, localDate, localWeekday, DEFAULT_TZ } from "./time.js";
 import { buildPersona } from "@kimi/context-core";
 import { ensureSubscriptionAuth, buildGroundTruth } from "./lib/daemon-core.js";
 import { dispatchAction, ActionType, type AutonomyMode } from "./lib/agency.js";
@@ -354,7 +354,7 @@ ensureSubscriptionAuth(); // fail fast at startup if the token is missing
 setNotifier(getNotifier()); // install the configured notifier (default: console/no-op)
 // Cron schedule is config-driven (default: 09:00 and 21:00 daily, in KIMI_CRON_TZ).
 const WAKE_CRON = process.env.DAEMON_WAKE_CRON || "0 9,21 * * *";
-const WAKE_TZ = process.env.KIMI_CRON_TZ || "Asia/Shanghai";
+const WAKE_TZ = process.env.KIMI_CRON_TZ || DEFAULT_TZ;
 cron.schedule(WAKE_CRON, () => {
   wake().catch((e) => console.error("[daemon] cron error:", e?.message || e));
 }, { timezone: WAKE_TZ });

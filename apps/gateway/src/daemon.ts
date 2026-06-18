@@ -252,12 +252,16 @@ async function wake(force = false) {
     const mcpToken = process.env.KIMI_MCP_TOKEN ?? process.env.KIMI_API_KEY ?? "";
     const options: any = {
       // Model id is config-driven; override via env. Must be a full id (aliases vary).
-      model: process.env.DAEMON_MODEL || "claude-opus-4-6",
+      // Model id is config-driven; override via DAEMON_MODEL. Default is a real,
+      // current id — the Claude Agent SDK resolves it against your subscription.
+      model: process.env.DAEMON_MODEL || "claude-sonnet-4-6",
       systemPrompt: loadDaemonPersona() || "",
+      // Streamable-HTTP MCP — MUST match what the gateway exposes (http-server.ts
+      // serves POST /mcp). type "http" = the modern Streamable HTTP transport.
       mcpServers: {
         kimi: {
-          type: "sse",
-          url: process.env.KIMI_MCP_URL ?? "http://127.0.0.1:3001/sse",
+          type: "http",
+          url: process.env.KIMI_MCP_URL ?? "http://127.0.0.1:3001/mcp",
           headers: { Authorization: `Bearer ${mcpToken}` },
         },
       },

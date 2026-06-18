@@ -6,6 +6,7 @@ import { jst } from "./time.js";
 import { buildPersona } from "@kimi/context-core";
 import { ensureSubscriptionAuth, buildGroundTruth } from "./lib/daemon-core.js";
 import { dispatchAction, ActionType, type AutonomyMode } from "./lib/agency.js";
+import { getNotifier, getSearchProvider } from "./lib/providers.js";
 
 // ============================================================================
 // wake daemon — a timer-driven, read-only agent loop.
@@ -315,7 +316,8 @@ async function wake(force = false) {
     });
 
     // action dispatch — route through the agency layer (DO_NOTHING is one option, offered not preferred).
-    const actionResult = await dispatchAction(parsed.action, { parsed, now }, AUTONOMY_MODE);
+    // search provider is injected so WEBSEARCH can actually act when configured (default no-op).
+    const actionResult = await dispatchAction(parsed.action, { parsed, now, search: getSearchProvider() }, AUTONOMY_MODE);
     await marker("daemon_action", {
       ts: jst(now),
       type: actionResult.type,
@@ -353,6 +355,7 @@ async function wake(force = false) {
 
 // ===== scheduler (long-lived; does not burn LLM tokens) =====
 ensureSubscriptionAuth(); // fail fast at startup if the token is missing
+setNotifier(getNotifier()); // install the configured notifier (default: console/no-op)
 // Cron schedule is config-driven (default: 14:00 and 23:00 daily).
 const WAKE_CRON = process.env.DAEMON_WAKE_CRON || "0 9,21 * * *";
 const WAKE_TZ = process.env.KIMI_CRON_TZ || "UTC";

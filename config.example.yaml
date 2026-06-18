@@ -168,3 +168,17 @@ dataProbe:
     shortValue: 4               # a single window below this counts as "short"
     shortCount: 2              # short windows reaching this count → trigger
   realDriver: ""               # real driver (neutral, upstream fills; placeholder if empty)
+
+# ---------- delivery providers (optional, OFF by default) ----------
+# Concrete implementations of the daemon's Notifier (outward push) and WEBSEARCH's
+# search provider. Both ship off; selection lives here, endpoints/keys go through
+# env vars. See apps/gateway/src/lib/providers.ts.
+delivery:
+  # NOTIFIER = none (default, logs to stdout) | console | webhook
+  #   webhook → POST JSON to NOTIFIER_WEBHOOK_URL; NOTIFIER_WEBHOOK_FIELD remaps the
+  #   content key (e.g. "text" Slack / "message" ntfy / "content" Discord).
+  notifier: "none"
+  # SEARCH_PROVIDER = none (default) | http
+  #   http → GET SEARCH_API_URL?{SEARCH_QUERY_PARAM=q}=<query> (+ Bearer SEARCH_API_KEY);
+  #   map the response via SEARCH_RESULTS_PATH (default "results") + SEARCH_FIELD_TITLE/_URL/_SNIPPET.
+  searchProvider: "none"

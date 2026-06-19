@@ -97,113 +97,24 @@ async function rerankLocal(query: string, docs: string[]): Promise<number[] | nu
   }
 }
 
-// Cohere Rerank — POST /v1/rerank. Model comes from RERANK_MODEL (no built-in
-// default — fail-closed); pick a CJK-capable model (e.g. rerank-multilingual-v3.0
-// or rerank-v3.5). Response:
-// { results: [{ index, relevance_score }, ...] } sorted by relevance.
-async function rerankCohere(
-  query: string,
-  docs: string[],
-  key: string,
-): Promise<number[] | null> {
-  const model = (process.env.RERANK_MODEL || "").trim();
-  if (!model) {
-    console.warn("[reranker] RERANK_MODEL not set, skipping");
-    return null;
-  }
-  try {
-    const res = await fetchWithRetry("https://api.cohere.com/v1/rerank", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        query,
-        documents: docs,
-        top_n: docs.length,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error(`[reranker] cohere ${res.status}: ${body.slice(0, 200)}`);
-      return null;
-    }
-    const data: any = await res.json();
-    const results = data?.results;
-    if (!Array.isArray(results)) {
-      console.error("[reranker] cohere unexpected response shape");
-      return null;
-    }
-    return scatterByIndex(
-      results.map((r: any) => ({ index: r.index, score: Number(r.relevance_score) })),
-      docs.length,
-    );
-  } catch (err: any) {
-    console.error("[reranker] cohere failed:", err?.message || err);
-    return null;
-  }
-}
+// Cloud rerank providers (Cohere / Jina / Voyage) — all POST /v1/rerank with the
+// same shape, differing only in URL, the top-N body key, the results JSON path,
+// and (Jina) an extra Accept header. Model comes from RERANK_MODEL (no built-in
+// default — fail-closed; pick a CJK-capable model). relevance_score is in [0,1];
+// scatterByIndex maps results back to input order (clamp01 guards downstream).
+export const RERANK_CONFIGS = {
+  cohere: { name: "cohere", url: "https://api.cohere.com/v1/rerank", topKey: "top_n", resultsPath: "results" },
+  jina: { name: "jina", url: "https://api.jina.ai/v1/rerank", topKey: "top_n", resultsPath: "results", extraHeaders: { Accept: "application/json" } },
+  voyage: { name: "voyage", url: "https://api.voyageai.com/v1/rerank", topKey: "top_k", resultsPath: "data" },
+} as const;
 
-// Jina Reranker — POST /v1/rerank. Model comes from RERANK_MODEL (no built-in
-// default — fail-closed); pick a CJK-capable model (e.g.
-// jina-reranker-v2-base-multilingual). Response:
-// { results: [{ index, relevance_score }, ...] }.
-async function rerankJina(
-  query: string,
-  docs: string[],
-  key: string,
-): Promise<number[] | null> {
-  const model = (process.env.RERANK_MODEL || "").trim();
-  if (!model) {
-    console.warn("[reranker] RERANK_MODEL not set, skipping");
-    return null;
-  }
-  try {
-    const res = await fetchWithRetry("https://api.jina.ai/v1/rerank", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        query,
-        documents: docs,
-        top_n: docs.length,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error(`[reranker] jina ${res.status}: ${body.slice(0, 200)}`);
-      return null;
-    }
-    const data: any = await res.json();
-    const results = data?.results;
-    if (!Array.isArray(results)) {
-      console.error("[reranker] jina unexpected response shape");
-      return null;
-    }
-    return scatterByIndex(
-      results.map((r: any) => ({ index: r.index, score: Number(r.relevance_score) })),
-      docs.length,
-    );
-  } catch (err: any) {
-    console.error("[reranker] jina failed:", err?.message || err);
-    return null;
-  }
-}
+type RerankConfig = (typeof RERANK_CONFIGS)[keyof typeof RERANK_CONFIGS];
 
-// Voyage Reranker — POST /v1/rerank. Model comes from RERANK_MODEL (no built-in
-// default — fail-closed); pick a multilingual model (e.g. rerank-2).
-// Response: { data: [{ index, relevance_score }, ...] }. relevance_score is in
-// [0,1]; clamp01 guards regardless.
-async function rerankVoyage(
+export async function rerankViaApi(
   query: string,
   docs: string[],
   key: string,
+  cfg: RerankConfig,
 ): Promise<number[] | null> {
   const model = (process.env.RERANK_MODEL || "").trim();
   if (!model) {
@@ -211,28 +122,24 @@ async function rerankVoyage(
     return null;
   }
   try {
-    const res = await fetchWithRetry("https://api.voyageai.com/v1/rerank", {
+    const res = await fetchWithRetry(cfg.url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
+        ...("extraHeaders" in cfg ? cfg.extraHeaders : {}),
       },
-      body: JSON.stringify({
-        model,
-        query,
-        documents: docs,
-        top_k: docs.length,
-      }),
+      body: JSON.stringify({ model, query, documents: docs, [cfg.topKey]: docs.length }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.error(`[reranker] voyage ${res.status}: ${body.slice(0, 200)}`);
+      console.error(`[reranker] ${cfg.name} ${res.status}: ${body.slice(0, 200)}`);
       return null;
     }
     const data: any = await res.json();
-    const results = data?.data;
+    const results = data?.[cfg.resultsPath];
     if (!Array.isArray(results)) {
-      console.error("[reranker] voyage unexpected response shape");
+      console.error(`[reranker] ${cfg.name} unexpected response shape`);
       return null;
     }
     return scatterByIndex(
@@ -240,7 +147,7 @@ async function rerankVoyage(
       docs.length,
     );
   } catch (err: any) {
-    console.error("[reranker] voyage failed:", err?.message || err);
+    console.error(`[reranker] ${cfg.name} failed:`, err?.message || err);
     return null;
   }
 }
@@ -271,7 +178,7 @@ export async function rerankCandidates(
         console.warn("[reranker] COHERE_API_KEY not set, skipping");
         return null;
       }
-      return rerankCohere(query, docs, key);
+      return rerankViaApi(query, docs, key, RERANK_CONFIGS.cohere);
     }
     case "jina": {
       const key = process.env.JINA_API_KEY;
@@ -279,7 +186,7 @@ export async function rerankCandidates(
         console.warn("[reranker] JINA_API_KEY not set, skipping");
         return null;
       }
-      return rerankJina(query, docs, key);
+      return rerankViaApi(query, docs, key, RERANK_CONFIGS.jina);
     }
     case "voyage": {
       const key = process.env.VOYAGE_API_KEY;
@@ -287,7 +194,7 @@ export async function rerankCandidates(
         console.warn("[reranker] VOYAGE_API_KEY not set, skipping");
         return null;
       }
-      return rerankVoyage(query, docs, key);
+      return rerankViaApi(query, docs, key, RERANK_CONFIGS.voyage);
     }
   }
 }

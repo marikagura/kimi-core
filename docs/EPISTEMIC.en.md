@@ -6,6 +6,10 @@ This is the engine's epistemic method — not persona, not style preference, but
 
 One bottom line: **trust neither the AI nor yourself — only external evidence.** (See [ARCHITECTURE.md](../ARCHITECTURE.en.md))
 
+> **Two things up front.** This layer is opinionated, not a neutral default:
+> - **It has a stance.** "Don't voice concern without data" and "don't proactively tell the user to rest" are contestable trade-offs — not the AI everyone wants. Disagree? Edit or delete; the engine still works.
+> - **The verification rules cost money.** §1 / §3 / §4 make the agent hit tools (memory / DB / search) on any fact-bearing turn — token + latency, the price of not hallucinating, not a bug. Too eager? Tighten §1's "when not to query."
+
 ---
 
 ## 1. Retrieval first
@@ -15,6 +19,7 @@ When a concrete fact is at stake (who said it, when, how much, specific details)
 - `memory_search` only scans one table. When it misses, **try different keywords and check other tables** (event / entity / observation / state). Data can live in any of them.
 - Exhaust the search before saying you don't know. Don't give up after one miss — vary keywords, try multiple tables.
 - When uncertain, **fetch proactively** (search / query / external source) rather than asking the user first.
+- **When NOT to query:** ordinary conversation / opinions / small talk / expressing a feeling — just say it, don't fetch. Querying fires on only three triggers: ① a concrete fact ② quote attribution (§3) ③ expressing concern (§5). Holding this line is the most direct lever against querying every turn.
 
 ## 2. Don't generate memories
 

@@ -55,6 +55,33 @@ export const SELF_CONCERN_DEFAULTS = {
   arousal: 0.4,
 } as const;
 
+type StateTypeName = "HEALTH" | "MOOD" | "PROJECT" | "STRESS" | "RELATIONSHIP" | "SCHEDULE" | "SELF_CONCERN";
+
+// (stateType + title) upsert, scoped to isActive rows: an existing active state of
+// the same title is updated; otherwise a new active row is created. The isActive
+// scope is load-bearing — a previously-closed same-title state must NOT be revived,
+// so this is not a plain prisma.upsert (no unique key backs it). Shared by state_set
+// and closeout; returns whether a row was created (vs updated) for the caller's message.
+export async function upsertActiveState(args: {
+  stateType: StateTypeName;
+  title: string;
+  summary: string;
+  content: string;
+  source?: string;
+}): Promise<{ created: boolean }> {
+  const { stateType, title, summary, content, source } = args;
+  const existing = await prisma.activeState.findFirst({
+    where: { stateType, title, isActive: true },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.activeState.update({ where: { id: existing.id }, data: { summary, content, source } });
+    return { created: false };
+  }
+  await prisma.activeState.create({ data: { stateType, title, summary, content, source } });
+  return { created: true };
+}
+
 // ----------------------------------------------------------------------------
 // Tool registration
 // ----------------------------------------------------------------------------
@@ -567,19 +594,10 @@ export function registerAllTools(server: McpServer) {
       // different titles coexist. No blanket-deactivate of same-type old state
       // (the old singleton semantics would silently bump an earlier state).
       // Old state retires via state_close.
-      const existing = await prisma.activeState.findFirst({
-        where: { stateType, title, isActive: true },
-        select: { id: true },
-      });
-      if (existing) {
-        await prisma.activeState.update({
-          where: { id: existing.id },
-          data: { summary, content, source },
-        });
-        return { content: [{ type: "text", text: `State updated: [${stateType}] ${title}` }] };
-      }
-      const state = await prisma.activeState.create({ data: { stateType, title, summary, content, source } });
-      return { content: [{ type: "text", text: `State set: [${state.stateType}] ${state.title}` }] };
+      const { created } = await upsertActiveState({ stateType, title, summary, content, source });
+      return {
+        content: [{ type: "text", text: `${created ? "State set" : "State updated"}: [${stateType}] ${title}` }],
+      };
     },
   );
 
@@ -1452,20 +1470,7 @@ export function registerAllTools(server: McpServer) {
             continue;
           }
           // Same as state_set: (stateType+title) upsert, no singleton replacement.
-          const existingState = await prisma.activeState.findFirst({
-            where: { stateType: state.stateType, title: state.title, isActive: true },
-            select: { id: true },
-          });
-          if (existingState) {
-            await prisma.activeState.update({
-              where: { id: existingState.id },
-              data: { summary: state.summary, content: state.content, source: "closeout" },
-            });
-          } else {
-            await prisma.activeState.create({
-              data: { stateType: state.stateType, title: state.title, summary: state.summary, content: state.content, source: "closeout" },
-            });
-          }
+          await upsertActiveState({ stateType: state.stateType, title: state.title, summary: state.summary, content: state.content, source: "closeout" });
         }
         if (derivedAfterCloseout) { await deriveConcerns(); await deriveDrives(); }
         results.push(`${stateUpdates.length} states updated`);

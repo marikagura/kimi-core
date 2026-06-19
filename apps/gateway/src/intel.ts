@@ -4,12 +4,12 @@ import cron from "node-cron";
 import prisma from "./db.js";
 import { Prisma } from "@prisma/client";
 import { localDate, localDateTime, DEFAULT_TZ } from "./time.js";
-import { fetchWithRetry } from "./fetch-retry.js";
 import { embedText, embedAndStore, writeEmbedding, STALE_EMBEDDING_WHERE } from "./lib/embed.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
-import { roleModel, llmBaseUrl, llmApiKey } from "./lib/models.js";
+import { roleModel } from "./lib/models.js";
+import { chatCompletion } from "./lib/llm.js";
 import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
 import { firstJsonObject } from "./lib/json-extract.js";
 
@@ -38,39 +38,19 @@ const CHAT_INTEL_OFF = true;
 
 const DAY_MS = 86_400_000;
 
+// Larger intel / digest / sweep caller: shares chatCompletion (fetch + 180s
+// timeout + throw) and supplies the INTEL_MODEL role default, OpenRouter provider
+// routing, and optional extended thinking. (callLLMShort in lib/llm.ts is the
+// lighter sibling — short default + trimmed result.)
 async function callLLM(system: string, user: string, maxTokens = 2000, modelOverride?: string, thinkingTokens?: number) {
-  const res = await fetchWithRetry(`${llmBaseUrl()}/chat/completions`, {
-    // LLM completions (esp. the extended-thinking self-sweep) can legitimately run
-    // well past the 60s default; give them room so a slow-but-valid call isn't aborted.
-    timeoutMs: 180_000,
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${llmApiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: modelOverride || roleModel("INTEL_MODEL"),
-      // Optional OpenRouter-style provider routing, sent only when LLM_PROVIDER_ORDER
-      // is set. Other OpenAI-compatible endpoints ignore an unknown `provider` field.
-      ...(PROVIDER_ORDER.length && {
-        provider: { order: PROVIDER_ORDER, allow_fallbacks: true },
-      }),
-      // Extended thinking (used by self-sweep). thinkingTokens must be < maxTokens
-      // (thinking counts toward total). Omitted → no thinking; existing calls unaffected.
-      ...(thinkingTokens && { reasoning: { max_tokens: thinkingTokens } }),
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      max_tokens: maxTokens,
-    }),
+  return chatCompletion({
+    system,
+    user,
+    model: modelOverride || roleModel("INTEL_MODEL"),
+    maxTokens,
+    providerOrder: PROVIDER_ORDER,
+    thinkingTokens,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`LLM ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const data = (await res.json()) as any;
-  return data.choices?.[0]?.message?.content || "";
 }
 
 function parseCandidates(response: string): any[] {

@@ -194,6 +194,22 @@ export type SweepVerdict = {
   applied: boolean; // actually wrote the DB (dryRun=false, verdict != linger, rows changed)
 };
 
+// Pure, unit-tested: turn a self-sweep LLM response into a verdict. A misparse
+// (empty / no JSON / parse error / unknown verdict) MUST default to "linger" —
+// never "resolved" / "active" — so a broken key can't silently close or reopen
+// a concern. The empty-response console.warn stays at the call site.
+export function parseSweepVerdict(raw: string): { verdict: SweepVerdict["verdict"]; evidenceNote: string } {
+  if (!raw || !raw.trim()) return { verdict: "linger", evidenceNote: "(empty LLM response → default linger)" };
+  try {
+    const parsed = firstJsonObject(raw);
+    if (!parsed) return { verdict: "linger", evidenceNote: "(no JSON in response → default linger)" };
+    const verdict = parsed.verdict === "resolved" || parsed.verdict === "active" ? parsed.verdict : "linger";
+    return { verdict, evidenceNote: String(parsed.evidence ?? "") };
+  } catch {
+    return { verdict: "linger", evidenceNote: "(JSON parse failed → default linger)" };
+  }
+}
+
 const SWEEP_TAKE = numEnv("CONCERN_SWEEP_TAKE", 50);
 
 export async function sweepConcerns(
@@ -252,24 +268,10 @@ export async function sweepConcerns(
     // treated as linger = a broken key never quietly closes. Default stays
     // linger (conservative, don't close on error), but evidence notes the
     // failure default and console.warn leaves a trace.
-    let verdict: SweepVerdict["verdict"] = "linger";
-    let evidenceNote = "";
     if (!raw || !raw.trim()) {
-      evidenceNote = "(empty LLM response → default linger)";
       console.warn(`[self-sweep] empty LLM response for "${key}" — default linger (check LLM key / provider)`);
-    } else {
-      try {
-        const parsed = firstJsonObject(raw);
-        if (parsed) {
-          if (parsed.verdict === "resolved" || parsed.verdict === "active") verdict = parsed.verdict;
-          evidenceNote = String(parsed.evidence ?? "");
-        } else {
-          evidenceNote = "(no JSON in response → default linger)";
-        }
-      } catch {
-        evidenceNote = "(JSON parse failed → default linger)";
-      }
     }
+    const { verdict, evidenceNote } = parseSweepVerdict(raw);
 
     let applied = false;
     if (!dryRun) {

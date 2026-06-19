@@ -109,13 +109,6 @@ export function registerAllTools(server: McpServer) {
           isError: true,
         };
       }
-      console.log("[memory_write] entry", {
-        title_len: title?.length,
-        content_type: typeof content,
-        content_len: typeof content === "string" ? content.length : -1,
-        content_head: typeof content === "string" ? content.slice(0, 40) : null,
-        has_markdown: typeof content === "string" && /[*`#]/.test(content),
-      });
       let resolvedTopicId: string | undefined = topicId;
       if (!resolvedTopicId && topicSlug) {
         const topic = await prisma.topic.findUnique({ where: { slug: topicSlug } });

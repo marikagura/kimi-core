@@ -29,6 +29,11 @@ import { CHAT_SOURCE, CROSS_CHAT_SOURCE, COMMIT_SOURCE, COMMIT_EVENT_TYPE, CHAT_
 export * from "./sources.js";
 export * from "./time.js";
 
+// tz-naive UTC window width for since-style queries (fed to Prisma `gte`). NOT a
+// display value — kept here, not in time.ts (that module is DST/timezone-aware
+// formatting; a raw day-width has no business there).
+const MS_PER_DAY = 86_400_000;
+
 export type Surface = "cc" | "tg" | "voice" | "chatroom";
 
 export interface ContextOpts {
@@ -83,7 +88,7 @@ export async function loadRestrictedLayer(
   if (opts.surface === "cc") return null; // harness visible → restricted content does not enter cc
 
   const days = opts.recentRestrictedDays ?? DEFAULT_RECENT_DAYS;
-  const since = new Date(Date.now() - days * 86400000);
+  const since = new Date(Date.now() - days * MS_PER_DAY);
   const select = { title: true, content: true, createdAt: true } as const;
 
   const [templates, anchors, recentRaw] = await Promise.all([
@@ -223,7 +228,7 @@ export async function loadObservations(prisma: PrismaClient): Promise<Observatio
 // ── topics layer (identical across surfaces) ──
 export interface TopicItem { domain: string; name: string; summary: string | null }
 export async function loadTopics(prisma: PrismaClient): Promise<TopicItem[]> {
-  const d7 = new Date(Date.now() - 7 * 86400000);
+  const d7 = new Date(Date.now() - 7 * MS_PER_DAY);
   return prisma.topic.findMany({
     where: { status: "ACTIVE", updatedAt: { gte: d7 } },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
@@ -236,7 +241,7 @@ export async function loadTopics(prisma: PrismaClient): Promise<TopicItem[]> {
 export interface EpisodeItem { title: string; summary: string | null; createdAt: Date }
 export interface EpisodeLayer { topEps: EpisodeItem[]; recentNonChat: EpisodeItem[] }
 export async function loadEpisodes(prisma: PrismaClient): Promise<EpisodeLayer> {
-  const d7 = new Date(Date.now() - 7 * 86400000);
+  const d7 = new Date(Date.now() - 7 * MS_PER_DAY);
   const sel = { title: true, summary: true, createdAt: true };
   const [topEps, recentNonChat] = await Promise.all([
     prisma.memory.findMany({

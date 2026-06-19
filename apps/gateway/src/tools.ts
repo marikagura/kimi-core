@@ -29,6 +29,19 @@ import {
   publicSearchDrop,
 } from "./lib/reentry-filter.js";
 
+// Anchor body rendering, shared by reentry / reentry_delta. Softens by type +
+// importance: BOUNDARY → full body (the rule body is the rule; slicing breaks
+// it). CORE importance=5 → full body (identity signature / commitments /
+// relationship frame must not lose its tail). CORE importance<=4 + all
+// PREFERENCE → summary || slice(500) (analytical content; 500 chars keeps the
+// first half of the arc).
+function renderAnchor(m: any): string {
+  if (m.memoryType === "BOUNDARY") return m.content;
+  if (m.memoryType === "CORE" && m.importance === 5) return m.content;
+  const fallback = m.content.length > 500 ? m.content.slice(0, 500) + "..." : m.content;
+  return m.summary || fallback;
+}
+
 // ----------------------------------------------------------------------------
 // Tool registration
 // ----------------------------------------------------------------------------
@@ -969,19 +982,6 @@ export function registerAllTools(server: McpServer) {
         : "No active topics.\n";
 
       ctx += "\n\n## Anchors & Rules (CORE / BOUNDARY / PREFERENCE)\n\n";
-      // anchors soften by type + importance. BOUNDARY: full body (the rule body
-      // is the rule, slicing breaks it). CORE importance=5: full body (identity
-      // signature / commitments / relationship frame must not lose its tail).
-      // CORE importance<=4 + all PREFERENCE: summary || slice(500) (analytical
-      // content; 500 chars keeps the first half of the arc).
-      const renderAnchor = (m: any) => {
-        if (m.memoryType === "BOUNDARY") return m.content;
-        if (m.memoryType === "CORE" && m.importance === 5) return m.content;
-        const fallback = m.content.length > 500
-          ? m.content.slice(0, 500) + "..."
-          : m.content;
-        return m.summary || fallback;
-      };
       ctx += anchors.length
         ? anchors
             .map(
@@ -1165,13 +1165,6 @@ export function registerAllTools(server: McpServer) {
         orderBy: { createdAt: "desc" },
         take: 40,
       });
-
-      const renderAnchor = (m: any) => {
-        if (m.memoryType === "BOUNDARY") return m.content;
-        if (m.memoryType === "CORE" && m.importance === 5) return m.content;
-        const fb = m.content.length > 500 ? m.content.slice(0, 500) + "..." : m.content;
-        return m.summary || fb;
-      };
 
       let ctx = `# Re-entry Delta\n\nSince ${localDateTime(since)} (anchor: ${anchorSrc}, tag=${chainTag})\n`;
       let any = false;

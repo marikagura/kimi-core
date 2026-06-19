@@ -36,6 +36,8 @@ const PROVIDER_ORDER = (process.env.LLM_PROVIDER_ORDER || "")
 // easy rollback of candidate extraction.
 const CHAT_INTEL_OFF = true;
 
+const DAY_MS = 86_400_000;
+
 async function callLLM(system: string, user: string, maxTokens = 2000, modelOverride?: string, thinkingTokens?: number) {
   const res = await fetchWithRetry(`${llmBaseUrl()}/chat/completions`, {
     // LLM completions (esp. the extended-thinking self-sweep) can legitimately run
@@ -116,7 +118,7 @@ async function getLastRun(): Promise<Date> {
     where: { eventType: "SYSTEM", source: "intel" },
     orderBy: { createdAt: "desc" },
   });
-  return last?.createdAt || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  return last?.createdAt || new Date(Date.now() - 7 * DAY_MS);
 }
 
 async function getExistingMemoryTitles(): Promise<string> {
@@ -311,7 +313,7 @@ export async function scanDialogueDigests(
   const _cutoffEnd = cutoffEnd ?? new Date(now);
   // 7-day look-back: catch recently un-digested sessions (backfill safety net).
   // Already-digested sessions are skipped by the title-date dedup.
-  const _cutoffStart = cutoffStart ?? new Date(now - 7 * 24 * 3600 * 1000);
+  const _cutoffStart = cutoffStart ?? new Date(now - 7 * DAY_MS);
 
   const events = await prisma.event.findMany({
     where: {
@@ -646,7 +648,7 @@ async function runAll() {
   // forever. Items still OPEN after 7 days → EXPIRED. Still visible in backstage,
   // but no longer part of the active backlog.
   try {
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - 7 * DAY_MS);
     const expired = await prisma.pendingItem.updateMany({
       where: {
         status: "OPEN",

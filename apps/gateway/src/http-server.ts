@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { timingSafeEqual } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -38,10 +39,21 @@ if (!process.env.DATABASE_URL) {
 // any anonymous caller was a full auth bypass and has been removed; if real
 // OAuth is ever needed, it must use PKCE + short-TTL one-time codes and issue
 // access tokens decoupled from KIMI_API_KEY — never echo the primary key.)
+// Precomputed once. Compared in constant time so response latency can't leak
+// the key byte-by-byte. The length check is a prerequisite of timingSafeEqual
+// (it throws on unequal lengths) and reveals nothing secret — the key length is
+// already implied by the scheme.
+const EXPECTED_AUTH = Buffer.from(`Bearer ${API_KEY}`);
+function authOk(header: string | string[] | undefined): boolean {
+  if (typeof header !== "string") return false;
+  const got = Buffer.from(header);
+  if (got.length !== EXPECTED_AUTH.length) return false;
+  return timingSafeEqual(got, EXPECTED_AUTH);
+}
+
 app.use((req, res, next) => {
   if (req.path === "/health") return next();
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${API_KEY}`) {
+  if (!authOk(req.headers.authorization)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

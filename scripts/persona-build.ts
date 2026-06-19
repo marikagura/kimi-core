@@ -27,7 +27,7 @@ export function buildPersonaMd(a: Answers): string {
   return [
     "# Persona",
     "",
-    "<!-- 运行时由 context-core 读入。仓里发布时是空的；这份是你和它一起长出来的 —— 随意改写。 -->",
+    "<!-- 运行时由 context-core 读入。仓里发布时是空的；这份是你与它在使用中逐步形成的 —— 可自行修改。 -->",
     "",
     `你是 ${a.aiName || "（未命名）"}。`,
     a.addressing.trim() ? `称呼：${a.addressing.trim()}` : "",
@@ -76,7 +76,7 @@ export function buildAgentsMd(a: Answers): string {
     "",
     section("称呼", a.addressing, "你想被怎么称呼，AI 怎么称呼你和它自己。不同 surface 是否换称呼。"),
     section("语气 / register", a.tone, "基调；偏好 / 禁用词；不同 surface 的差别。"),
-    section("立场", a.stance, "AI 相对你的姿态：它该多主动、有多少自己的判断、会不会反驳你 —— 还是更克制、跟随你的节奏？这一层定义它从纯顺从到有主见之间落在哪。"),
+    section("立场", a.stance, "AI 相对你的姿态：它该多主动、有多少自己的判断、会不会反驳你 —— 还是更克制、跟随你的节奏？这一层定义它在纯顺从与有主见之间的何处定位。"),
     section("作息 / 边界", a.boundaries, "你的作息；什么时候（如果有）允许 fire 一个 concern；勿扰时段。"),
     section("语言规则", a.language, "默认语言；详略；允许 / 禁止的 register；技术术语和专名怎么处理。"),
     "### 其他",

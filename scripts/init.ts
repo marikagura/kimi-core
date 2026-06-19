@@ -95,20 +95,20 @@ const exists = async (p: string): Promise<boolean> => {
 
 async function main(): Promise<void> {
   say(
-    "kimi-core onboarding —— 我们一起把你的 persona 长出来,不是填表。",
-    "你说的每句话都用你自己的话,直接进你的 persona;一个字都不提交进仓。",
-    "每题都可以留空跳过(回车),以后在 persona.md / AGENTS.md 里随时补。",
+    "kimi-core onboarding —— 我们一起把你的 persona 长出来，不是填表。",
+    "你说的每句话都用你自己的话，直接进你的 persona；任何内容都不会提交到仓库。",
+    "每题都可以留空跳过（回车），以后在 persona.md / AGENTS.md 里随时补。",
   );
 
-  const aiName = await ask("\n先给个名字 —— 你叫你的 AI 什么?", "kimi");
+  const aiName = await ask("\n先给个名字 —— 你叫你的 AI 什么？", "kimi");
 
   const addressing = await dimension(
-    ["## 称呼", `它怎么称呼你?你怎么称呼 ${aiName}?它怎么称呼自己?换不同场合(如私下 / 公开)会不会变?`],
+    ["## 称呼", `它怎么称呼你？你怎么称呼 ${aiName}？它怎么称呼自己？换不同场合（如私下 / 公开）会不会变？`],
     "用你自己的话说说称呼。",
     "addressing / how you and the AI call each other",
   );
   const tone = await dimension(
-    ["## 语气", "你想要它说话是什么调子?有没有特别喜欢 / 特别受不了的词或腔调?"],
+    ["## 语气", "你想要它说话是什么调子？有没有特别喜欢 / 特别受不了的词或腔调？"],
     "描述一下你要的语气。",
     "tone / register the AI should speak in",
   );
@@ -118,23 +118,23 @@ async function main(): Promise<void> {
     "how assertive or deferential the AI should be toward the user",
   );
   const boundaries = await dimension(
-    ["## 作息 / 边界", "你的作息大概是?什么情况下(如果有)你允许它主动 fire 一个 concern?有没有勿扰时段?"],
+    ["## 作息 / 边界", "你的作息大概是？什么情况下（如果有）你允许它主动 fire 一个 concern？有没有勿扰时段？"],
     "说说你的作息和边界。",
     "the user's schedule, when a concern may fire, do-not-disturb windows",
   );
   const language = await dimension(
-    ["## 语言规则", "默认用什么语言?要简还是要细?有没有允许 / 禁止的腔调?技术术语和专名怎么处理?"],
+    ["## 语言规则", "默认用什么语言？要简还是要细？有没有允许 / 禁止的腔调？技术术语和专名怎么处理？"],
     "说说语言规则。",
     "default language, verbosity, allowed/forbidden register, term handling",
   );
 
   say(
     "## drive 维度",
-    "它该主动「想要」什么?(陪伴 / 欲望 / 深谈 / 债务渴求… 名字你自己取)",
-    "每个维度对应四种形态之一(对称 / 不应期 / 结合满足 / 敏化渴求)—— 形态菜单和怎么定义见 docs/DRIVES.md。",
-    "这里先给名字,具体 backing + 形态用 DRIVE_DIMS 环境变量配(一个 JSON 数组,形状见 docs/DRIVES.md)。",
+    "它该主动「想要」什么？（陪伴 / 欲望 / 深谈 / 债务渴求… 名称由你自行命名）",
+    "每个维度对应四种形态之一（对称 / 不应期 / 结合满足 / 敏化渴求）—— 形态菜单和怎么定义见 docs/DRIVES.md。",
+    "这里先给名字，具体 backing + 形态用 DRIVE_DIMS 环境变量配（一个 JSON 数组，形状见 docs/DRIVES.md）。",
   );
-  const drives = (await ask("逗号分隔列几个(留空 = 之后在 config 里定)。"))
+  const drives = (await ask("以逗号分隔列出若干项（留空则之后在 config 中配置）。"))
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -143,50 +143,50 @@ async function main(): Promise<void> {
 
   // ── modules ──────────────────────────────────────────────
   const rerank = await ask("\nReranker provider (none / local / cohere / jina / voyage)?", "none");
-  const tz = await ask("显示时区 (IANA 名,如 Asia/Shanghai / America/New_York)?", "Asia/Shanghai");
+  const tz = await ask("显示时区 （IANA 名，如 Asia/Shanghai / America/New_York）？", "Asia/Shanghai");
 
   // ── LLM provider + models (bring your own — the repo presets none) ─────────
   say(
     "## LLM 端点 + 模型",
     "kimi-core 不内置任何 provider、任何模型 —— 你自己带。",
-    "LLM_BASE_URL:一个 OpenAI 兼容端点(OpenRouter / OpenAI / Together / 本地 vLLM·Ollama 都行),如 https://api.openai.com/v1。",
-    "KIMI_MODEL:你那个端点认的模型 id(如 anthropic/claude-... 走 OpenRouter、gpt-... 走 OpenAI);intel / digest / 短调用都走它,可在 .env 里按角色覆盖。",
-    "DAEMON_MODEL:自主 wake daemon 用 Claude Agent SDK,填裸 Claude id(如 claude-...);不跑 daemon 可留空。",
-    "embedding:也是 OpenAI 兼容端点(EMBED_BASE_URL + EMBED_API_KEY + EMBED_MODEL,1536 维);三者任一留空 = 不开语义检索(退回关键词)。",
+    "LLM_BASE_URL：一个 OpenAI 兼容端点（OpenRouter / OpenAI / Together / 本地 vLLM、Ollama 均可），如 https://api.openai.com/v1。",
+    "KIMI_MODEL：该端点所支持的模型 id（如 anthropic/claude-... 经 OpenRouter、gpt-... 经 OpenAI）；intel / digest / 短调用均经由它，可在 .env 里按角色覆盖。",
+    "DAEMON_MODEL：自主 wake daemon 用 Claude Agent SDK，填裸 Claude id（如 claude-...）；不跑 daemon 可留空。",
+    "embedding：也是 OpenAI 兼容端点（EMBED_BASE_URL + EMBED_API_KEY + EMBED_MODEL,1536 维）；三者任一留空 = 不开语义检索（退回关键词）。",
   );
-  const llmBase = await ask("LLM_BASE_URL(OpenAI 兼容端点)?", "");
+  const llmBase = await ask("LLM_BASE_URL（OpenAI 兼容端点）？", "");
   const llmKey = await ask("LLM_API_KEY?", "");
-  const kimiModel = await ask("KIMI_MODEL(端点认的模型 id)?", "");
-  const daemonModel = await ask("DAEMON_MODEL(裸 Claude id,可留空)?", "");
-  const embedBase = await ask("EMBED_BASE_URL(可留空)?", "");
-  const embedKey = await ask("EMBED_API_KEY(可留空)?", "");
-  const embedModel = await ask("EMBED_MODEL(可留空)?", "");
+  const kimiModel = await ask("KIMI_MODEL（端点所接受的模型 id）？", "");
+  const daemonModel = await ask("DAEMON_MODEL（裸 Claude id，可留空）？", "");
+  const embedBase = await ask("EMBED_BASE_URL（可留空）？", "");
+  const embedKey = await ask("EMBED_API_KEY（可留空）？", "");
+  const embedModel = await ask("EMBED_MODEL（可留空）？", "");
 
   // ── write persona.md ─────────────────────────────────────
   await writeFile("persona.md", buildPersonaMd(answers));
-  console.log("\n✓ 写好 persona.md");
+  console.log("\n✓ 已生成 persona.md");
 
   // ── write AGENTS.md (epistemic filled; relationship grown from this talk) ──
   if (await exists("AGENTS.md")) {
-    console.log("• AGENTS.md 已存在 —— 不动。");
+    console.log("• AGENTS.md 已存在 —— 保持不变。");
   } else {
     await writeFile("AGENTS.md", buildAgentsMd(answers));
-    console.log("✓ 写好 AGENTS.md (认识论层已填;关系层是你刚说的话)");
+    console.log("✓ 已生成 AGENTS.md （认识论层已填；关系层是你刚说的话）");
   }
 
   // ── .env ─────────────────────────────────────────────────
   if (await exists(".env")) {
-    console.log("• .env 已存在 —— 不动(key 列表见 .env.example)。");
+    console.log("• .env 已存在 —— 保持不变（key 列表见 .env.example）。");
   } else {
     const env = [
       "# 由 `npm run init` 生成",
       'DATABASE_URL="postgresql://kimi:kimi@localhost:5432/kimi?schema=public"',
-      `LLM_BASE_URL="${llmBase}"      # 必填 —— OpenAI 兼容端点(代码补 /chat/completions)`,
+      `LLM_BASE_URL="${llmBase}"      # 必填 —— OpenAI 兼容端点（代码补 /chat/completions）`,
       `LLM_API_KEY="${llmKey}"        # 必填 —— 该端点的 key`,
-      `KIMI_API_KEY="${genKey()}"   # gateway bearer,自动生成;绝不用默认值`,
-      `KIMI_MODEL="${kimiModel}"        # 必填 —— 默认模型(你自带,仓库无内置)`,
-      `DAEMON_MODEL="${daemonModel}"    # daemon 用(裸 Claude id);不跑 daemon 可空`,
-      `EMBED_BASE_URL="${embedBase}"  # embedding 端点;三者任一空 = 无语义检索`,
+      `KIMI_API_KEY="${genKey()}"   # gateway bearer，自动生成；绝不用默认值`,
+      `KIMI_MODEL="${kimiModel}"        # 必填 —— 默认模型（你自带，仓库无内置）`,
+      `DAEMON_MODEL="${daemonModel}"    # daemon 用（裸 Claude id）；不跑 daemon 可空`,
+      `EMBED_BASE_URL="${embedBase}"  # embedding 端点；三者任一空 = 无语义检索`,
       `EMBED_API_KEY="${embedKey}"    # embedding 端点的 key`,
       `EMBED_MODEL="${embedModel}"      # embedding 模型`,
       `RERANK_PROVIDER="${rerank}"`,
@@ -194,20 +194,20 @@ async function main(): Promise<void> {
       "",
     ].join("\n");
     await writeFile(".env", env);
-    console.log("✓ 写好 .env (LLM_BASE_URL / LLM_API_KEY / KIMI_MODEL 没填的去补上)");
+    console.log("✓ 已生成 .env （LLM_BASE_URL / LLM_API_KEY / KIMI_MODEL 未填写的项请予以补全）");
   }
 
   // ── optional private-word scanner list ───────────────────
-  const scrub = await ask("\n现在加私词到泄漏扫描器吗?真名 / 用户名 / 域名,逗号分隔(留空跳过)", "");
+  const scrub = await ask("\n现在加私词到泄漏扫描器吗？真名 / 用户名 / 域名，逗号分隔（留空跳过）", "");
   if (scrub) {
     const lines = ["# private-word scanner list — gitignored, never committed.", ...scrub.split(",").map((s) => s.trim()).filter(Boolean)];
     await writeFile(".scrub-secrets.local", lines.join("\n") + "\n");
-    console.log("✓ 写好 .scrub-secrets.local (已 gitignore)");
+    console.log("✓ 已生成 .scrub-secrets.local （已 gitignore）");
   }
 
   say(
-    "完成。你说的话都在 persona.md / AGENTS.md 里了 —— 去读一遍,改成更像你的。",
-    "接下来:",
+    "完成。你说的话都在 persona.md / AGENTS.md 里了 —— 请通读一遍，将其修改得更贴近你自己。",
+    "接下来：",
     "  docker compose up -d          # 或把 DATABASE_URL 指向你自己的 Postgres",
     "  npm run db:migrate:deploy",
     "  npm run dev",

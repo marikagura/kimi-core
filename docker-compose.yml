@@ -1,6 +1,6 @@
-# 本地 Postgres + pgvector。clone 后 `docker compose up -d` 即得本地库,
-# 数据 100% 留本机。不想用 docker?把 .env 的 DATABASE_URL 指向你自己的
-# Postgres / Supabase 即可 —— 引擎不绑死任何托管平台。
+# 本地 Postgres + pgvector。clone 后 `docker compose up -d` 即得本地库，
+# 数据 100% 留本机。不想用 docker？可将 .env 的 DATABASE_URL 指向自有的
+# Postgres / Supabase 即可 —— 引擎不锁定任何托管平台。
 services:
   db:
     image: pgvector/pgvector:pg16

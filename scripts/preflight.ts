@@ -28,10 +28,10 @@ async function main(): Promise<void> {
 
   if (missing.length === 0) return; // set up — let dev proceed
 
-  console.error(`\n⚠  还没 onboarding —— 缺 ${missing.join(" / ")}。`);
-  console.error("   引擎需要先建好本地配置和 persona,直接 dev 会报错。先跑:\n");
+  console.error(`\n⚠  尚未完成 onboarding —— 缺 ${missing.join(" / ")}。`);
+  console.error("   引擎需要先建好本地配置和 persona，直接 dev 会报错。先跑：\n");
   console.error("     npm run init                # 问几个问题 → 生成 persona.md / AGENTS.md / .env");
-  console.error("     npm run db:migrate:deploy   # 建库 (先 docker compose up -d 或指好 DATABASE_URL)");
+  console.error("     npm run db:migrate:deploy   # 创建数据库 （先 docker compose up -d 或指好 DATABASE_URL）");
   console.error("\n   然后再 npm run dev。详见 README。\n");
   process.exit(1);
 }

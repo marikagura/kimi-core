@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { buildPersonaMd, buildAgentsMd, section, type Answers } from "./persona-build.js";
 
@@ -20,8 +22,8 @@ describe("buildPersonaMd", () => {
   });
   it("omits addressing/tone lines when those answers are blank", () => {
     const md = buildPersonaMd({ ...full, addressing: "", tone: "" });
-    expect(md).not.toContain("称呼:");
-    expect(md).not.toContain("语气 / register:");
+    expect(md).not.toContain("称呼：");
+    expect(md).not.toContain("语气 / register：");
   });
   it("falls back to a DRIVE_DIMS pointer when no drives are given", () => {
     expect(buildPersonaMd({ ...full, drives: [] })).toContain("DRIVE_DIMS");
@@ -52,5 +54,34 @@ describe("buildAgentsMd", () => {
     const md = buildAgentsMd({ ...full, demand: "" });
     expect(md).not.toContain("要，抓着我别轻易放");
     expect(md).toMatch(/### demand \/ 立场\n<!--/);
+  });
+});
+
+describe("epistemic layer stays in sync with EPISTEMIC.md", () => {
+  // The epistemic layer exists in two copies: this generated AGENTS.md template
+  // and the human-facing docs/EPISTEMIC.md. They drift silently (PATTERNS §8).
+  // These assertions force the canonical markers to stay in both — edit one
+  // copy without the other and a test here fails.
+  // Repo-root-relative (tests run from the package root); avoids import.meta
+  // (CommonJS build target) and __dirname (ESM test runtime).
+  const doc = readFileSync(join(process.cwd(), "docs", "EPISTEMIC.md"), "utf8");
+  const agents = buildAgentsMd(full);
+
+  for (const marker of ["这一层不是默认配置", "没有数据就不表达 concern", "什么时候不查"]) {
+    it(`both the doc and the AGENTS.md template carry: ${marker}`, () => {
+      expect(doc).toContain(marker);
+      expect(agents).toContain(marker);
+    });
+  }
+
+  it("both ship exactly two concern self-checks, not four", () => {
+    expect(agents).not.toContain("四条");
+    expect(doc).not.toContain("四条");
+    expect(agents).toContain("先过两条");
+  });
+
+  it("dropped phrasing stays dropped in the template", () => {
+    expect(agents).not.toContain("不反射性道歉");
+    expect(agents).not.toContain("是有争议的取舍");
   });
 });

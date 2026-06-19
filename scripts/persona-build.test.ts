@@ -7,7 +7,7 @@ const full: Answers = {
   aiName: "Aria",
   addressing: "它叫我 你，我叫它 Aria",
   tone: "平实、温暖",
-  demand: "要，抓着我别轻易放",
+  stance: "要它有主见，敢反驳我",
   boundaries: "夜里活动；有数据才准 concern",
   language: "默认中文，简短",
   drives: ["companionship", "desire", "deep_talk"],
@@ -47,13 +47,13 @@ describe("buildAgentsMd", () => {
   });
   it("grows the relationship layer from the user's own words", () => {
     const md = buildAgentsMd(full);
-    expect(md).toContain("要，抓着我别轻易放"); // demand, verbatim
+    expect(md).toContain("要它有主见，敢反驳我"); // stance, verbatim
     expect(md).toContain("默认中文，简短"); // language, verbatim
   });
   it("leaves a skipped relationship section blank (a TODO), not invented", () => {
-    const md = buildAgentsMd({ ...full, demand: "" });
-    expect(md).not.toContain("要，抓着我别轻易放");
-    expect(md).toMatch(/### demand \/ 立场\n<!--/);
+    const md = buildAgentsMd({ ...full, stance: "" });
+    expect(md).not.toContain("要它有主见，敢反驳我");
+    expect(md).toMatch(/### 立场\n<!--/);
   });
 });
 

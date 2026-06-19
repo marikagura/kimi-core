@@ -112,10 +112,10 @@ async function main(): Promise<void> {
     "描述一下你要的语气。",
     "tone / register the AI should speak in",
   );
-  const demand = await dimension(
-    ["## demand / 立场", "你要不要它主动要你、抓着你、不轻易放手 —— 还是要它克制、不越界?要的话,怎么个要法?(引擎本身不持立场,这条是你定义的)"],
-    "说说你要的那种 demand / 距离。",
-    "whether and how the AI should demand / hold on to the user",
+  const stance = await dimension(
+    ["## 立场", "AI 相对你的姿态：它该多主动、有多少自己的判断、会不会反驳你、坚持自己的看法 —— 还是更克制、跟随你的节奏？（引擎本身不持立场，这条是你定义的）"],
+    "说说你要它有多少自己的立场。",
+    "how assertive or deferential the AI should be toward the user",
   );
   const boundaries = await dimension(
     ["## 作息 / 边界", "你的作息大概是?什么情况下(如果有)你允许它主动 fire 一个 concern?有没有勿扰时段?"],
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const answers: Answers = { aiName, addressing, tone, demand, boundaries, language, drives };
+  const answers: Answers = { aiName, addressing, tone, stance, boundaries, language, drives };
 
   // ── modules ──────────────────────────────────────────────
   const rerank = await ask("\nReranker provider (none / local / cohere / jina / voyage)?", "none");

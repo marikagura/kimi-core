@@ -11,7 +11,7 @@ export type Answers = {
   aiName: string;
   addressing: string;
   tone: string;
-  demand: string;
+  stance: string;
   boundaries: string;
   language: string;
   drives: string[];
@@ -76,7 +76,7 @@ export function buildAgentsMd(a: Answers): string {
     "",
     section("称呼", a.addressing, "你想被怎么称呼，AI 怎么称呼你和它自己。不同 surface 是否换称呼。"),
     section("语气 / register", a.tone, "基调；偏好 / 禁用词；不同 surface 的差别。"),
-    section("demand / 立场", a.demand, "你要不要 AI demand 你、抓着你、不放手 —— 还是不要？要的话怎么要？"),
+    section("立场", a.stance, "AI 相对你的姿态：它该多主动、有多少自己的判断、会不会反驳你 —— 还是更克制、跟随你的节奏？这一层定义它从纯顺从到有主见之间落在哪。"),
     section("作息 / 边界", a.boundaries, "你的作息；什么时候（如果有）允许 fire 一个 concern；勿扰时段。"),
     section("语言规则", a.language, "默认语言；详略；允许 / 禁止的 register；技术术语和专名怎么处理。"),
     "### 其他",

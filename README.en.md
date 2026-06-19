@@ -8,6 +8,7 @@ For the architecture, read **[ARCHITECTURE.en.md](./ARCHITECTURE.en.md)** — ev
 For the autonomous-agency layer (cron wake → drive/concern → action selection, DO_NOTHING one option not the default → dispatch),
 read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argument, the full citations, and the honest fault lines.
 For the engineering patterns when wiring a surface (prompt caching / retry / credential rotation), see **[docs/PATTERNS.en.md](./docs/PATTERNS.en.md)**.
+For the epistemic layer (retrieval-first / no hallucinated recall / attribution checks / symmetric verification / concern self-checks), see **[docs/EPISTEMIC.en.md](./docs/EPISTEMIC.en.md)** — the operational manual for the AGENTS.md epistemic layer.
 
 > **Status: engine complete, with tests and docs.** hybrid retrieval, self-drive / concern, the
 > reproducible eval, conversational onboarding, reference delivery providers, and the adversarial self-audit
@@ -99,10 +100,9 @@ document injected.** The mechanism is the **skeleton**: retrieval, the drive mat
 action selection (with `DO_NOTHING` as one available action, not the default), the wake loop. The **soul**
 lives in an `AGENTS.md` you write — the cross-runtime convention, like Claude Code's `CLAUDE.md` or Cursor's `.cursorrules` (name it whatever your tool reads, or symlink). It has two layers:
 
-- **Epistemic layer** — *method, not persona*: four self-checks before voicing concern / affection, a
-  fact-check before answering, concern must be backed by data, no RLHF welfare reflex. This holds for any
+- **Epistemic layer** — *method, not persona*: retrieval-first, no hallucinated recall, attribution checks, symmetric verification (human input is not exempt either), concern self-checks, no RLHF welfare reflex. This holds for any
   user, so `npm run init` ships it **filled in** — it is this repo's one principle (trust neither the AI
-  nor yourself, only external evidence) made operational.
+  nor yourself, only external evidence) made operational. See **[docs/EPISTEMIC.en.md](./docs/EPISTEMIC.en.md)** for the full operational rules.
 - **Relationship layer** — *persona*: forms of address, register, demand stance, rhythm, language rules.
   This is yours; `npm run init` ships it **blank**, with zero example content.
 

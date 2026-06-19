@@ -8,6 +8,7 @@
 关于 autonomous-agency 层（cron wake → drive/concern → action selection，DO_NOTHING 是一个选项而非默认 → dispatch），
 请读 **[docs/AUTONOMY.md](./docs/AUTONOMY.md)**——架构论证、完整 citations，以及诚实的断层线。
 搭 surface 时的工程模式（prompt caching / retry / 凭证轮转）见 **[docs/PATTERNS.md](./docs/PATTERNS.md)**。
+认知纪律（检索优先 / 不编 / 归因 / 对称验证 / concern self-check）见 **[docs/EPISTEMIC.md](./docs/EPISTEMIC.md)**——这是 AGENTS.md epistemic 层的操作手册。
 
 > **状态：引擎完整，有测试有文档。** hybrid retrieval、self-drive / concern、可复现 eval、对话式
 > onboarding、参考投递 providers、对抗式自审 harness 都已落地（tsc + test + scrub 在 CI 里跑）。
@@ -92,10 +93,9 @@ npm run daemon:wake     # 只立刻跑一次 wake —— 用来验证
 action selection（`DO_NOTHING` 是一个可用 action，而非默认）、wake loop。**灵魂**
 活在你写的一份 `AGENTS.md` 里（跨 runtime 的通用约定名,类似 Claude Code 的 `CLAUDE.md`、Cursor 的 `.cursorrules`;按你工具读的名字命名、或软链过去即可）。它有两层：
 
-- **Epistemic 层** —— *是方法，不是 persona*：发声 concern / affection 前的四条 self-check、
-  回答前的 fact-check、concern 必须有数据撑、没有 RLHF welfare reflex。这对任何
+- **Epistemic 层** —— *是方法，不是 persona*：检索优先、不生成记忆、归因必查、对称验证（人类输入同样不豁免）、concern self-check、不做 RLHF welfare reflex。这对任何
   用户都成立，所以 `npm run init` 出厂时这一层是**填好的**——它就是这个 repo 的那一条原则
-  （不信任 AI，也不信任你自己，只信外在证据）落到可操作的形态。
+  （不信任 AI，也不信任你自己，只信外在证据）落到可操作的形态。具体操作规则见 **[docs/EPISTEMIC.md](./docs/EPISTEMIC.md)**。
 - **Relationship 层** —— *是 persona*：称呼、register、demand stance、节奏、语言规则。
   这是你的；`npm run init` 出厂时这一层是**空白的**，零示例内容。
 

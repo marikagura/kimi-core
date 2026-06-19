@@ -42,6 +42,19 @@ function renderAnchor(m: any): string {
   return m.summary || fallback;
 }
 
+// Fields shared by every SELF_CONCERN → Memory(SELF) write (state_set + closeout).
+// The per-site fields (title/summary/content, sourceType MANUAL↔CHAT, concernKey,
+// authorModel) stay explicit at each call so provenance can't silently drift.
+export const SELF_CONCERN_DEFAULTS = {
+  memoryType: "STATE",
+  importance: 4,
+  experiencer: "SELF",
+  grounding: "SUBJECTIVE",
+  resolution: "OPEN",
+  valence: -0.3,
+  arousal: 0.4,
+} as const;
+
 // ----------------------------------------------------------------------------
 // Tool registration
 // ----------------------------------------------------------------------------
@@ -535,18 +548,12 @@ export function registerAllTools(server: McpServer) {
         const concernKey = `cc_${slugify(title)}`;
         await prisma.memory.create({
           data: {
-            memoryType: "STATE",
+            ...SELF_CONCERN_DEFAULTS,
             title,
             summary,
             content,
-            importance: 4,
             sourceType: "MANUAL",
-            experiencer: "SELF",
-            grounding: "SUBJECTIVE",
             concernKey,
-            resolution: "OPEN",
-            valence: -0.3,
-            arousal: 0.4,
           },
         });
         const d = await deriveConcerns();
@@ -1432,18 +1439,12 @@ export function registerAllTools(server: McpServer) {
           if (state.stateType === "SELF_CONCERN") {
             await prisma.memory.create({
               data: {
-                memoryType: "STATE",
+                ...SELF_CONCERN_DEFAULTS,
                 title: state.title,
                 summary: state.summary,
                 content: state.content,
-                importance: 4,
                 sourceType: "CHAT",
-                experiencer: "SELF",
-                grounding: "SUBJECTIVE",
                 concernKey: `cc_${slugify(state.title)}`,
-                resolution: "OPEN",
-                valence: -0.3,
-                arousal: 0.4,
                 authorModel,
               },
             });

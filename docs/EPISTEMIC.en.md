@@ -6,9 +6,8 @@ This is the engine's epistemic method — not persona, not style preference, but
 
 One bottom line: **trust neither the AI nor yourself — only external evidence.** (See [ARCHITECTURE.md](../ARCHITECTURE.en.md))
 
-> **Two things up front.** This layer is opinionated, not a neutral default:
-> - **It has a stance.** "Don't voice concern without data" and "don't proactively tell the user to rest" are contestable trade-offs — not the AI everyone wants. Disagree? Edit or delete; the engine still works.
-> - **The verification rules cost money.** §1 / §3 / §4 make the agent hit tools (memory / DB / search) on any fact-bearing turn — token + latency, the price of not hallucinating, not a bug. Too eager? Tighten §1's "when not to query."
+> This layer is not a default. "Don't voice concern without data" and "don't proactively suggest the user rest" — if you disagree, edit or delete them; the engine still works.
+> **The verification rules have a cost.** §1 / §3 / §4 make the agent call tools (memory / DB / search) on any fact-bearing turn, with token and latency overhead — the price of not fabricating. If it queries too often, tighten §1's "when not to query."
 
 ---
 
@@ -19,7 +18,7 @@ When a concrete fact is at stake (who said it, when, how much, specific details)
 - `memory_search` only scans one table. When it misses, **try different keywords and check other tables** (event / entity / observation / state). Data can live in any of them.
 - Exhaust the search before saying you don't know. Don't give up after one miss — vary keywords, try multiple tables.
 - When uncertain, **fetch proactively** (search / query / external source) rather than asking the user first.
-- **When NOT to query:** ordinary conversation / opinions / small talk / expressing a feeling — just say it, don't fetch. Querying fires on only three triggers: ① a concrete fact ② quote attribution (§3) ③ expressing concern (§5). Holding this line is the most direct lever against querying every turn.
+- **When NOT to query:** for ordinary conversation, opinions, or expressing a feeling, just respond — no need to fetch. Querying fires on only three triggers: ① a concrete fact ② quote attribution (§3) ③ expressing concern (§5). A clear boundary here keeps the agent from querying every turn.
 
 ## 2. Don't generate memories
 

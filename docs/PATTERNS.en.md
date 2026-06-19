@@ -2,184 +2,162 @@
 
 > 中文版: ./PATTERNS.md
 
-Most of these aren't part of the engine core — they're the traps we hit, repeatedly, building this whole thing (the engine itself plus its surfaces: a chat endpoint, the wake daemon, push, a dashboard). The first four sections are the LLM-surface plumbing layer (prompt caching / retry / credentials / utility calls); the rest are the broader engineering surface — engine, database, retrieval, build, time. One bottom line runs through all of it: **trust no claim, only external evidence** — whether the cache hit is in the token counts, whether the SQL is right is on a real DB, an audit finding is real once you reproduce it.
+Most of these aren't part of the engine core — they're the traps we hit, repeatedly, building this whole thing (the engine itself plus its surfaces: a chat endpoint, the wake daemon, push, a dashboard). One bottom line runs through all of it: **trust no claim, only external evidence** — whether the cache hit is in the token counts, whether the SQL is right is on a real DB, an audit finding is real once you reproduce it.
 
-## 1. Prompt caching: savings come from the prefix, not the marker
+> **How to read this.** The body is the **non-obvious** traps — silent failures (no error, output still correct, you only lose it on the bill or in the data) and **domain-specific** ones (you only hit them forking this engine), grouped by theme. Generic backend hygiene (most experienced engineers already do it) is collected at the end in **[Appendix · table-stakes](#appendix--table-stakes-hygiene-skippable-if-experienced)**, kept for newcomers, uncompressed. The cut is simple: **if tsc / one run catches it**, it's table-stakes; **if you only find it on the bill or in the data**, it's in the body — which is the flip side of "trust only external evidence."
 
-**The one invariant: caching is a prefix match. Change any byte in the prefix and everything after it is invalidated.** Render order is fixed `tools → system → messages`; the cache key is the exact bytes up to each `cache_control` breakpoint.
+## 1. Prompt caching: the silent money traps
 
-### The rule: stable first, volatile last
+**The foundational rule: caching is a prefix match. Change any byte in the prefix and everything after it is invalidated.** Render order is fixed `tools → system → messages`; the cache key is the exact bytes up to each `cache_control` breakpoint. So put the **unchanging** content first (persona / principles / long-lived memory / a fixed tool list) with `cache_control`, and the **per-turn** content (timestamps, a git commit, this turn's activity) **after the last breakpoint** (in the last user message). That rule is common knowledge; what's hard is that it **fails without an error** — these all violate it with no error at all:
 
-Put the **unchanging** content first (persona / principles / long-lived memory / a fixed tool list) and mark it with `cache_control`; put the **per-turn** content (timestamps, a git commit, this turn's activity, request-varying ids) **after the last breakpoint**.
+- **A changing identifier inside the cached prefix and ahead of the history** — the moment it changes it **cascades** and invalidates the whole history cache behind it. You re-write tens of thousands of tokens a turn while believing the cache works.
+- **A sliding history window breaks the cache by itself.** "Last N messages" drops the oldest each turn, shifting the prefix and forcing a full re-write every turn. Fix: anchor history **append-only from session start** (by `sinceTs`), trim only from the oldest end under a hard cap.
+- **A marker ≠ a hit.** Read `cache_read_input_tokens`: if it stays **0** across an identical prefix you have a silent invalidator (`Date.now()`, unsorted JSON, a varying tool set). **Diff the rendered bytes of two requests to find it.**
+- **Several silent limits**: at most **4** breakpoints per request; below the model's minimum cacheable prefix (commonly 1k–4k tokens) it **silently won't cache** (`cache_creation`=0, no error); a **20-block lookback** — a turn with > 20 tool_use/result blocks misses the prior cache, so add an intermediate breakpoint every ~15 blocks in long turns.
+- **Multi-turn:** put the breakpoint on the last block of the most recent message (prefix = stable + whole history, accruing turn over turn); give the long-lived persona its own breakpoint.
+- **OpenAI-compat endpoints**: `cache_control` on the tools array 400s — put it on the system message; cached tokens live at a nested path like `usage.prompt_tokens_details.cached_tokens`, and reading the wrong path shows 0% hit all day.
+- **Don't change tools / switch model mid-session**: tools render at position 0, so any change rebuilds the whole cache; caches are model-scoped.
+- **Reconcile your price table against live rates.** A hardcoded per-token table a generation stale inflates reported spend several-fold — token counts right, multiplier old. Check against the provider's models API; backfill historical rows (keep the old value in a column for rollback).
 
-> ⚠️ **The most common silent trap.** A changing identifier (a timestamp / git commit hash / "current mode") sitting inside the cached prefix *and ahead of the history* — the moment it changes, it **cascades** and invalidates the entire history cache behind it. You re-write tens of thousands of tokens every turn while believing the cache is working. Fix: move those volatile fragments into the **last user message**, so the prefix (persona + history) holds a long-lived cache_read.
+> Why caching doesn't violate "no auto-consolidation": it's plumbing that saves money on a **disposable transcript buffer** — it doesn't summarize, conclude, or claim what the conversation "was." That's different from auto-compaction (which *does* render a compressed judgment). The first is neutral, do it fully; the second carries a judgment and this repo doesn't do it (see [AUTONOMY.en.md](./AUTONOMY.en.md)).
 
-### Multi-turn
+## 2. Cold-start context: load it yourself, not via a subagent
 
-Put the breakpoint on the last content block of the **most recent message** — the prefix is stable + the whole history, accruing hits turn over turn. Give the long-lived persona its own breakpoint as well.
+When you boot a session, the work of loading cold-start context (profile, active state, recent memory, recent commits — `reentry` here) must be done by **the agent that will act**, not handed to a subagent to save the main context's tokens.
 
-### A sliding history window breaks the cache by itself
+The temptation is real: that big read is expensive in the main context. But a subagent can only return a **summary**, and the nuance that makes the agent actually *inhabit* the state / relationship — register, the exact phrasing of a commitment, the edge of a boundary — doesn't survive a relay. **The value of context is that it's resident in the agent that acts; outsourcing it to a subagent reduces it to a summary first.** Pay the tokens.
 
-The common "load the last N messages" makes the **oldest row drop out each turn**, so the prefix shifts and forces a full re-write every turn — same disease as the volatile-prefix one above, different cause. Fix: anchor history **append-only from the session start** (append by `sinceTs`) so the prefix is stable; only trim from the oldest end under a hard safety cap.
+- **Anchor the boot with a label/tag** (e.g. `cc-YYMMDDHHMM`) so a mid-session delta (`reentry_delta`) fetches only what's new since that anchor — that's how you bound the ongoing cost, not by re-reading everything each time. The labeling itself costs a few tokens, but it buys cheap deltas.
+- **Fetch the recent commits while you're at it**: what happened at the code level is part of grounding — don't infer it from the conversation, don't wait for an error to check.
+- In a line: the temptation to save tokens makes you outsource the read — but the whole point of context is residence, and outsourcing is reduction.
 
-### Measure — don't trust the marker
+## 3. Prisma / pgvector
 
-A marker ≠ a hit. Read `cache_read_input_tokens` on the response: if it stays **0** across requests with an identical prefix, you have a silent invalidator (`Date.now()` in the system prompt, unsorted JSON, a varying tool set). **Diff the rendered bytes of two requests to find it.** This is the repo's whole stance: trust no claim, only external evidence.
+- **Don't let Prisma touch an `Unsupported("vector")` column.** Prisma can't deserialize a pgvector column; a default `findMany` / `create … RETURNING *` still SELECTs it and throws — `create` throws first, masking that all reads are broken too. `omit` won't help (`Unsupported` fields aren't exposed to the client). Approach: **declare** the column in the schema (so `db push` doesn't DROP it as unknown), but route all vector read/write through `$queryRaw` / `$executeRaw`. **Never `prisma db push --accept-data-loss`** — it silently drops columns it doesn't know about (that's how a whole table of embeddings got lost).
+- **A deployed client lagging a new enum value crashes every full-column read.** Add an enum value to the DB without regenerating the client and any query returning that enum column throws `Value X not found in enum`, silently killing background loops. Defenses: read display rows via `$queryRaw` + `"col"::text`; add a `postinstall: prisma generate`. Note `git pull` + restart does NOT run install, so a manual `db:generate` is still needed.
+- **Don't proxy a real condition with a correlated-but-not-equivalent column.** Counting "missing embeddings" via `embeddingAt IS NULL` overcounted by 180-odd because a row can have a vector and a null timestamp; the true `embedding IS NULL` count was 0. Query the condition you mean.
+- **Index graph / link tables on both directions** (`[fromType,fromId,relationType]` and `[toType,toId]`); build with `CREATE INDEX IF NOT EXISTS` + Prisma's naming so `db push` doesn't re-detect.
 
-### TTL
+## 4. Retrieval / eval
 
-`{type:"ephemeral"}` is 5 minutes by default; for long-lived, gap-accessed content like a persona, use `{type:"ephemeral", ttl:"1h"}`. The economics: writes cost more than reads (≈1.25× for 5min / ≈2× for 1h), reads ≈0.1× — 5min breaks even at two requests, 1h needs three. Rolling history → 5min; stable persona → 1h.
+- **A semantic-only search needs a similarity floor — tuned from measured data, not guessed.** Base embedding similarity (notably CJK) is high enough (~0.3–0.5) that unrelated queries pass a low final cutoff and return random neighbors. Measure the **gap** between "unrelated" and "truly similar" on a real eval set and set the floor in the gap; too high (0.5) silently drops genuine matches at 0.43–0.49. Strong keyword / entity hits should **bypass** the floor.
+- **Only put cases your data can satisfy into the eval set.** "Failures" that are really missing source data (no memory body contains the term) should be removed, not treated as algorithm bugs. Negative controls (`expectNone`) are their own class — keep them out of the headline hit@ / MRR.
+- **Re-embed on edit, not just on null.** A sweep that only embeds NULL-vector rows leaves stale embeddings after edits; stamp an `embeddingAt` and re-embed when `updatedAt > embeddingAt`. Size the batch so a backfill finishes in one run.
+- **Stand up the eval harness (nDCG / hit@k + a regression alert) before tuning thresholds** — measurement first, on a cron, compared to a rolling average, so tuning is data-driven.
 
-### Constraints that bite
+## 5. Concurrency / cron / agent safety
 
-- At most **4** breakpoints per request.
-- The minimum cacheable prefix is model-dependent (commonly 1k–4k tokens); below it, the prefix **silently won't cache** (`cache_creation` = 0, no error).
-- **20-block lookback**: a breakpoint walks back at most 20 content blocks. An agentic turn that adds > 20 tool_use / result blocks won't find the previous cache and silently misses — add an intermediate breakpoint every ~15 blocks in long turns.
-- **OpenAI-compat endpoints (OpenRouter etc.)**: don't put `cache_control` directly on the tools array (it 400s); put it on the system message — one breakpoint covers tools + system + history. Read usage from the right JSON path too — a provider nests cached tokens at e.g. `usage.prompt_tokens_details.cached_tokens`; read the wrong path and you'll see 0% hit all day.
-- Don't change tools / switch model mid-session: tools render at position 0, so any change rebuilds the whole cache; caches are model-scoped.
+- **`allowedTools` is a pre-approval list, not a whitelist.** Tools not listed are **still callable** and fall through to the permission mode. To actually restrict an autonomous agent, set a deny-by-default permission mode **and** add a programmatic `canUseTool` gate.
+- **Don't fire-and-forget writes in serverless.** Vercel / serverless kills the instance after `controller.close()`, so an un-awaited `void prisma.create(...)` never lands; `await` before closing.
+- **Self-heal scheduled jobs with a watchdog + startup catch-up.** A stale client made a twice-daily briefing silently stop for ~9h with no alarm. A watchdog cron detects a missed slot (past grace, no event since) and restarts; a startup catch-up delivers a genuinely-missed slot once — guarded so a routine restart after a successful slot doesn't re-fire.
+- **`setState` updaters are deferred, not synchronous.** Mutating an outer `let` inside a React 18 `setState((s)=>…)` and reading it before commit — the value is still empty when `fetch` runs. Compute the next value synchronously with a plain `const`.
 
-### Cost: two money traps beyond caching
+## 6. Credentials / secrets / auth
 
-- **Reconcile your price table against live rates.** A hardcoded per-token price table that's a generation stale inflates all reported spend several-fold — the token counts are right, the multiplier is old. Check against the provider's models API; backfill historical rows (keep the old value in a column for rollback).
-- **Move per-item LLM sweeps off the hot path.** Running an LLM evaluation on every wake / event can burn hundreds a month; a week's evidence doesn't change within a day, so a single daily cron cuts it to cents.
+- **Don't return a real token from an anonymous endpoint.** An OAuth `/token` stub that returns the master API key to any anonymous POST is a full auth bypass. If clients use a static Bearer, **delete** the whole `.well-known` / `register` / `authorize` / `token` surface — an unused auth surface is pure liability.
+- **Fail closed on config — ship no default.** Never `process.env.X || "some-default-key/model/endpoint"` — error clearly at startup and exit rather than silently running on an endpoint / model the user never chose. A missing key is a hard startup failure, not a silent open door.
+- **Compare secrets in constant time.** Don't validate a Bearer with `===` — a plaintext compare leaks the key byte-by-byte via latency. Length-guard, then `crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected))`.
+- **Exclude secrets structurally from every injection surface.** Credentials stay out of prompts often only by luck of ranking, not structure. Walk every passive injection path (retrieval, recent-memories, digest, profile…) and add an explicit credential filter to each — rank won't hold.
+- **Third-party OAuth refresh tokens rotate.** Catch the rotated token via the SDK's token event, **persist** it, stamp `lastRefreshedAt`; on `invalid_grant` flip to FAILED and surface it; keep tokens DB-primary (not `.env`) and run a daily refresh probe with an alert on failure.
 
-### Why caching doesn't violate "no auto-consolidation"
+## 7. Parsing a model's JSON output
 
-Caching is plumbing that saves money on a **disposable transcript buffer** — it doesn't summarize, draw conclusions, or claim what the conversation "was." That's different from auto-compaction / auto-summarization (which *does* render a compressed judgment about what the conversation was). The first is neutral — do it fully; the second carries a judgment and this repo doesn't do it (see the curation stance in [AUTONOMY.en.md](./AUTONOMY.en.md) — context is rebuilt from curated memory + reentry, not from an auto-summarized transcript).
+- **Layered fallback, not one greedy regex.** Models intermittently wrap JSON in ```` ```json ```` fences and truncate at `max_tokens`, leaving unclosed braces a greedy `\{[\s\S]*\}` won't match. **Strip fences first**; on parse failure, **regex-extract individual fields** so the critical one survives; pin "pure JSON, no fences" and cap the output size in the prompt.
+- **Empty outputs have several independent causes — budget for all**: `max_tokens` too small for a longer prompt's JSON; reasoning / thinking tokens counting against the completion budget — raise the cap to leave room for both.
 
-## 2. Retry / timeouts / resilience
+## 8. Data modeling / dedup / defaults
 
-**Prefer the official SDK.** The Anthropic SDK auto-retries connection errors / 408 / 409 / 429 / ≥500 with exponential backoff, and honors `retry-after` — you don't write any of it.
+- **A "only new since last run" clause permanently strips a backlog.** A `createdAt >= since` filter on pending items means anything skipped by a per-run cap is **never retried** (its `createdAt` predates the next `since`). Drop the time filter and rely on slug-based dedup (e.g. 48h) — still retries stuck items. For gappy event streams, a **fixed look-back window** (e.g. 12h) beats "since last success," which misses signals that landed during a suppressed window.
+- **A schema `@default` silently enrolls records into expensive processing.** Three create-paths never passed a `resolution`, so a `@default(OPEN)` pulled dozens of routine rows into a continuous LLM sweep — hundreds a month. Set the field **explicitly** at every write site, backfill the mis-defaulted rows, give the rare true cases a reopen tool.
+- **DRY drift becomes a correctness bug.** Cross-surface contracts (event-type names, parse logic, tool schemas) duplicated in two places drift: two transport entries each missing the other's tools, same-named schemas disagreeing (slug vs id), one leaking keys the other filtered; a daemon writing one eventType while the reader queries another makes commits silently invisible. Extract cross-surface contracts into **one** registry / module.
+- **Pick a dedup key that's stable and free of glitchy fields.** Keying on an internal id breaks when grouping changes; keying on a noisy upstream timestamp produces duplicate notifications on re-emit. Use a stable natural key (date + content); key user-facing dedup on the slug / identity.
+- **An ASCII-only slugify drops CJK.** A slugify that assumes ASCII strips a Chinese identity key to an empty string and key-aggregation breaks. Keep slugify Unicode-aware.
 
-**If you raw-fetch an OpenAI-compat endpoint** (OpenRouter etc., where you don't get the SDK's retries), a hand-rolled version must:
+## 9. Retry / timeouts / resilience
 
-- **Exponential backoff + jitter** (not linear; jitter stops a batch of simultaneously-woken requests from retrying in lockstep and colliding again).
-- **Honor the `Retry-After` header** (429 / 503 often carry it — the server tells you how long to wait; don't guess).
-- **Branch on status**: retry 429, 5xx, and **529 overloaded** (all retryable); **don't** retry 4xx (400 / 401 / 403 — retrying won't help).
-- Cap the attempts + an overall timeout.
+- **Treat pool exhaustion as a transient to retry.** When several services share one session-mode pooler (low ceiling), queries **silently return empty** rather than erroring. Wrap each parallel query (tolerate a single empty result) so one rejection in a `Promise.all` doesn't 500 the dashboard; retry transient connection errors 3×; the real fix is a transaction-mode (pgbouncer) pooler + a higher ceiling.
+- **Tier your timeouts.** A generic fetch default (say 60s) is fine for ordinary APIs but **aborts a slow LLM generation** (extended thinking / long output can run minutes). Give the LLM caller its own much-higher per-attempt timeout (180s range).
+- **Long-idle SSE streams get killed by client body timeouts.** An idle SSE connection dies after ~5 min when the client's (undici) `bodyTimeout` fires; emit a periodic `: keepalive` comment every ~25s and `clearInterval` on close.
 
-**Tier your timeouts.** A generic fetch default (say 60s) is fine for ordinary APIs but will **abort a slow LLM generation** — extended thinking / long output can run two or three minutes. Give the LLM caller its own much-higher per-attempt timeout (180s range), so the retry machinery doesn't kill a slow response.
-
-**Wrap every external call in a retry helper.** A bare `fetch()` to an upstream means a single `ETIMEDOUT` / `ECONNRESET` crashes the cron or surfaces as a tool error; route all through `fetchWithRetry`, with an explicit `res.ok` throw where the upstream has no structured error. Same for outbound webhook / notification sends — a retry queue so a network blip doesn't drop the message.
-
-**Treat pool exhaustion as a transient to retry.** When several services share one session-mode pooler (low connection ceiling), queries **silently return empty** rather than erroring. Wrap each parallel query (tolerate a single empty result) so one rejection in a `Promise.all` doesn't 500 the whole dashboard; retry transient connection errors 3×; the real fix is a transaction-mode (pgbouncer) pooler + a higher connection ceiling.
-
-**Long-idle SSE streams get killed by client body timeouts.** An idle SSE connection dies after ~5 min because the client's (undici) `bodyTimeout` fires with no data. Emit a periodic SSE comment (`: keepalive`) every ~25s, and `clearInterval` on close to avoid a timer leak.
-
-**Different surface, different policy**: an interactive chat endpoint can just throw and let the user resend; a background / cron path (wake / digest) should back off and retry — don't let one scheduled tick lose a whole cycle to a transient outage.
-
-## 3. Credentials / secrets / auth
-
-**Fail closed on config — ship no default.** Never `process.env.X || "some-default-key/model/endpoint"` — if it's unset, error clearly at startup and exit, rather than silently running on an endpoint / model / key the user never chose. A missing API key should be a hard startup failure, not a silent open door.
-
-**Import your env loader at every entry point.** Crons / scripts that crash on `DATABASE_URL not found` or a missing key are usually just an entry file that didn't `import "dotenv/config"` while a shared module assumed env was loaded. Load it in each entry point.
-
-**Compare secrets in constant time.** Don't validate a Bearer / token with `===` / `!==` — a plaintext compare leaks the key byte-by-byte via response latency. Length-guard first, then `crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected))`.
-
-**Don't return a real token from an anonymous endpoint.** An OAuth `/token` stub that returns the master API key to any anonymous POST is a full auth bypass. If clients use a static Bearer and don't need the OAuth flow, **delete** the whole `.well-known` / `register` / `authorize` / `token` surface — an unused auth surface is pure liability.
-
-**"Cookie present" is not authentication.** A gate that passes on any non-empty cookie is no gate. Verify a **signed** cookie (or a token match) at the proxy, and defensively re-check in each route — don't rely on one layer.
-
-**Exclude secrets structurally from every injection surface.** Credentials stay out of prompts often only by luck of importance-ranking, not by structure. An audit has to walk every passive injection path (retrieval, recent-memories, digest, profile…) and add an explicit credential filter to each — rank won't hold, and eventually a new path leaks one through.
-
-**Third-party OAuth refresh tokens rotate occasionally.** The idiom:
-
-- Use the SDK's token event (e.g. google-auth-library's `client.on("tokens")`) to catch the rotated token, **persist it**, and stamp `lastRefreshedAt`.
-- On `invalid_grant` → flip the credential to FAILED and surface it (don't swallow it silently, or you'll only find out on the next scheduled run).
-- Keep tokens DB-primary (not `.env`), cache the client for a few tens of seconds rather than hitting the DB every call; run a daily refresh probe and alert on failure.
-
-(Note: an LLM API-key pool / rotation is a scale / rate-limit concern; a single-user 1:1 system needs one key — see the non-goals in [ROADMAP.en.md](./ROADMAP.en.md).)
-
-## 4. Utility LLM calls: frame as a pure transformer
-
-When you use a (usually cheap) model as a **transformer over user content** — translate, normalize, classify, extract, summarize one message — it can mistake that content as **addressed to it** and respond / refuse / moralize / add a disclaimer instead of doing the transform. The cheaper the model, the likelier. The fix is in the system prompt, not the content:
-
-- State the **role** narrowly: "You are ONLY a translator / normalizer / classifier."
-- State that the input is **not addressed to it**: "The input is one line from someone else's conversation — it is NOT addressed to you."
-- **Forbid the failure modes** explicitly: "NEVER respond to it, refuse, moralize, add a disclaimer, or say what you are — you are not a participant."
-- Pin the **output shape** ("output EXACTLY two lines: `EN: …` / `ZH: …`") so a stray refusal sentence is structurally obvious to the caller and easy to reject.
-- **Put hard constraints at the top of the prompt, not buried.** A "don't do X" rule sitting a thousand-plus lines deep gets overridden whenever the injected context is saturated with the opposite signal — intermittent, context-triggered, not a constant bug. Hoist hard constraints to the top and name the specific trap.
-
-## 5. Parsing a model's JSON output
-
-To get JSON out of a model, you need **layered fallback**, not one greedy regex:
-
-- Models intermittently wrap JSON in ```` ```json ```` fences and truncate at `max_tokens`, leaving unclosed braces a greedy `\{[\s\S]*\}` won't match. **Strip fences first**; on parse failure, **regex-extract individual fields** so at least the critical one survives; in the prompt, pin "pure JSON, no fences" and cap the output size.
-- **Empty outputs have several independent causes — budget for all**: `max_tokens` too small for a longer prompt's JSON; and reasoning / thinking tokens counting against the completion budget — raise the cap to leave room for both reasoning and the answer.
-- **Provider-compat endpoints reject provider-native fields**: `cache_control` on the tools array 400s on an OpenAI-compatible endpoint; keep it on the system block. Always surface the upstream **response body** in the error, not just the status code — otherwise you're guessing.
-- Collapse this JSON-extraction into **one** helper (don't let it sprawl into six copies that drift).
-
-## 6. Prisma / pgvector
-
-- **Don't let Prisma touch an `Unsupported("vector")` column.** Prisma can't deserialize a pgvector column; a default `findMany` / `create … RETURNING *` still SELECTs it and throws — and `create` throws first, masking that all reads are broken too. `omit` won't save you (`Unsupported` fields aren't exposed to the client). Approach: **declare** the column in the schema (so `db push` doesn't DROP it as an unknown column), but route all vector read/write through `$queryRaw` / `$executeRaw`. **Never `prisma db push --accept-data-loss`** — it silently drops columns it doesn't know about (that's how a whole table of embeddings got lost).
-- **Quote camelCase column names in raw SQL.** `@@map` maps the table name only; column identifiers stay as declared (`isActive` / `topicId`). Postgres lowercases unquoted identifiers, so an unquoted `is_active` raises `42703 undefined column`.
-- **A deployed Prisma client lagging a new enum value crashes every full-column read.** Add an enum value to the DB without regenerating the client and any query returning that enum column throws `Value X not found in enum`, silently killing background loops. Two defenses: read display rows via `$queryRaw` + `"col"::text` (unknown values can't poison the result); add a `postinstall: prisma generate`. Note `git pull` + restart does NOT run install, so a manual `db:generate` step is still needed.
-- **Index graph / link tables on both traversal directions.** A links/edges table walked by `from` and `to` ends needs a composite index on each (`[fromType,fromId,relationType]` and `[toType,toId]`); add them before the edge count grows. Build with `CREATE INDEX IF NOT EXISTS` using Prisma's naming so `db push` doesn't re-detect.
-- **Don't proxy a real condition with a correlated-but-not-equivalent column.** A dashboard counted "missing embeddings" via `embeddingAt IS NULL`, but a row can have a vector and a null timestamp — overcounting missing by 180-odd while the true `embedding IS NULL` count was 0. Query the condition you actually mean.
-
-## 7. Migrations / schema evolution
-
-- **Don't rely on `prisma db push` when the pooler is connection-constrained.** A 15-connection Supabase pooler with processes already running makes `db push` fail (`EMAXCONNSESSION`). Writing `ALTER TABLE … ADD COLUMN IF NOT EXISTS` into a checked-in SQL file run via one `psql` does schema + backfill reliably.
-- **Make migrations idempotent and check them into the repo.** Use `ADD COLUMN IF NOT EXISTS`; flag row-specific backfill UPDATEs as non-idempotent historical artifacts that fresh installs skip. Migrations applied by hand and never committed are time bombs.
-- **Leave the consumer a fallback when you add a column.** A new nullable column feeding a size-bounded context (summary vs full content) wants a `slice()` fallback + a warning rather than a hard block — so old rows the consumer hasn't been updated for don't all break.
-
-## 8. Retrieval / eval
-
-- **A semantic-only search needs a similarity floor — tuned from measured data, not guessed.** Base embedding similarity (notably for CJK text) is high enough (~0.3–0.5) that unrelated queries pass a low final-score cutoff and return random neighbors. Measure the **gap** between "unrelated" and "truly similar" scores on a real eval set and set the floor in the gap; an over-high floor (0.5) silently drops genuine matches scoring 0.43–0.49. Strong keyword / entity hits should **bypass** the floor.
-- **Stand up the eval harness (nDCG / hit@k + a regression alert) before tuning thresholds.** Build the measurement first; run it on a cron, compare to a rolling average, alert on a drop — so threshold tuning is data-driven and regressions are caught automatically.
-- **Only put cases your data can actually satisfy into the eval set.** "Failures" that are really missing source data (no memory body contains the term) should be removed, not treated as algorithm bugs; don't pad the set with cases you can't ground. Negative controls (`expectNone`) are their own class — keep them out of the headline hit@ / MRR.
-- **Re-embed on edit, not just on null.** A sweep that only embeds NULL-vector rows leaves stale embeddings after content edits; stamp an `embeddingAt` and re-embed when `updatedAt > embeddingAt`. Size the sweep batch so a backfill finishes in one run, not over days.
-
-## 9. Data modeling / dedup / defaults
-
-- **A schema `@default` silently enrolls records into expensive processing.** Three create-paths never passed a `resolution`, so a `@default(OPEN)` pulled dozens of routine rows into a continuous LLM sweep pool — hundreds a month. Set the field **explicitly** at every write site, backfill the mis-defaulted rows, and give the rare true cases a reopen tool.
-- **Pick a dedup key that's stable and free of glitchy fields.** Keying on an internal id breaks when grouping changes; keying on a noisy upstream timestamp produces duplicate notifications when the source re-emits the same item. Use a stable natural key (date + content); key user-facing dedup on the slug / identity, not the timestamp — keep the timestamp only on the underlying full-history record.
-- **A "only new since last run" clause permanently strips a backlog.** A `createdAt >= since` filter on pending items means anything skipped by a per-run cap is **never retried** (its `createdAt` predates the next `since`). Drop the time filter and rely on slug-based dedup (e.g. 48h) to prevent re-sends while still retrying stuck items. For gappy event streams, a **fixed look-back window** (e.g. 12h) beats "since last success" — the latter misses signals that landed during a suppressed / skipped window.
-- **A single-row upsert keyed on type silently overwrites another.** A state write keyed only on type lets one record quietly replace another of the same type; key the upsert on `(type, title)` so distinct items coexist.
-- **DRY drift becomes a correctness bug.** Cross-surface contracts (event-type names, parse logic, tool schemas) duplicated in two places drift: two transport entry points (stdio vs SSE) each missing tools the other had, same-named tools with mismatched schemas (one took a slug, one an id), one even leaking keys the other filtered; a daemon writing one eventType while the reader queries another → commits silently invisible. Extract cross-surface contracts into **one** registry / module and change it once.
-- **An ASCII-only slugify drops CJK.** A slugify that assumes ASCII strips a Chinese identity key to an empty string and downstream key-aggregation breaks. Keep slugify Unicode-aware, or handle non-ASCII explicitly.
+(The retry basics — prefer the official SDK, hand-rolled backoff rules, wrap every call, per-surface strategy — are in the [Appendix](#appendix--table-stakes-hygiene-skippable-if-experienced).)
 
 ## 10. Time / timezone
 
-- **Inject "now" into any LLM context that reasons about time.** Without a "now" header the model **infers** current time from event timestamps and gets intervals / relative times wrong; pass an explicit `current: YYYY-MM-DD HH:MM`, and the **weekday** too (models infer day-of-week unreliably).
-- **Event time ≠ write time.** A record's `createdAt` (write time) is not the time of the thing it describes; ground temporal reasoning in event time and add a **freshness gate**, or days-old conversation gets quoted as current presence.
-- **One timezone source of truth = an IANA zone, not an offset.** Storing a numeric UTC offset and doing time math breaks across DST; store an IANA zone (e.g. `Asia/Shanghai`), defined once, used everywhere.
-- **A timestamp-stripping regex must cover every separator the producer might emit.** A strip filter that only matched hyphen dates leaked prefixes when the producer switched to slashes; use a `[-/]` character class — teach the pattern rather than enumerate formats.
+- **Inject "now" into any LLM context that reasons about time.** Without a "now" header the model **infers** current time from event timestamps and gets intervals / relative times wrong; pass an explicit `current: YYYY-MM-DD HH:MM`, and the **weekday** too.
+- **Event time ≠ write time.** A record's `createdAt` (write time) is not the time of the thing it describes; ground temporal reasoning in event time + a **freshness gate**, or days-old conversation gets quoted as current presence.
+- **A timestamp-stripping regex must cover every separator the producer might emit.** A filter that only matched hyphen dates leaked prefixes when the producer switched to slashes; use a `[-/]` character class.
 
-## 11. Concurrency / cron / serverless / agent safety
+## 11. Migrations / schema evolution
 
-- **Don't fire-and-forget writes in serverless.** Vercel / serverless kills the instance after `controller.close()`, so an un-awaited `void prisma.create(...)` never lands; `await` writes before closing the stream.
-- **Add `timezone` to every cron schedule.** A cron expression without `{ timezone: "Asia/Tokyo" }` runs in the host's zone and fires at the wrong local hour.
-- **Bound the agentic loop + gate concurrent jobs.** Cap agent turns (`maxTurns`) with an explicit "stop when you've gathered enough" instruction; put a concurrency lock on hourly ticks so overlapping runs don't double-process.
-- **Self-heal scheduled jobs with a watchdog + startup catch-up.** A stale client made a twice-daily briefing silently stop for ~9h with no alarm. Add a watchdog cron that detects a missed slot (past grace, no event since) and restarts the worker, plus a startup catch-up that delivers a genuinely-missed slot once — guarded so routine restarts after a successful slot don't re-fire.
-- **`allowedTools` is a pre-approval list, not a whitelist.** Tools not listed are **still callable** and fall through to the permission mode. To actually restrict an autonomous agent, set a deny-by-default permission mode **and** add a programmatic `canUseTool` gate.
-- **`setState` updaters are deferred, not synchronous.** Mutating an outer `let` inside a React 18 `setState((s) => …)` updater and reading it before commit — the value is still empty when `fetch` runs, sending an empty payload. Compute the next value synchronously with a plain `const`, not in the updater body.
+- **Don't rely on `prisma db push` when the pooler is connection-constrained.** A 15-connection Supabase pooler with processes running makes `db push` fail (`EMAXCONNSESSION`). Writing `ALTER TABLE … ADD COLUMN IF NOT EXISTS` into a checked-in SQL file run via one `psql` does schema + backfill reliably.
 
-## 12. Build / CI / dependencies
+(Idempotent migrations and a consumer fallback when adding a column are in the [Appendix](#appendix--table-stakes-hygiene-skippable-if-experienced).)
 
-- **A lockfile is platform-specific.** A lockfile generated on macOS misses Linux's native optional deps (esbuild / tsx's `@emnapi/core` and friends), and CI then fails `npm ci` on the Linux runner. Use `npm install` in CI, or generate a multi-platform lockfile — `npm install --package-lock-only` on a single OS won't capture other platforms' optionalDependencies.
-- **Run `prisma generate` before the build on CI.** Missing `@prisma/client` types fail the build until generate is wired into the build step; also declare the env vars you use in `turbo.json` and set `packageManager` at the repo root for workspace resolution.
-- **Don't depend on the CI runtime stripping TS for you.** A build that runs `node script.ts` assuming native TS strip breaks when the CI Node version (22.x) doesn't strip and there's no `.nvmrc` / `engines` pin. Make the hook fail-soft (a committed fallback artifact) and pin the Node version.
-- **Static review systematically over-claims.** Static inference hunting bugs over-claims systematically; an audit finding is to be trusted once you **reproduce it behaviorally** (run it once in a real environment). The repo's self-audit harness exists for exactly this — which is why verifying DB-bound paths means starting a real DB and running, not just tsc + unit tests.
+## 12. Utility LLM calls: frame as a pure transformer
 
-## 13. Observability
+When you use a (usually cheap) model as a **transformer over user content** (translate / normalize / classify / extract / summarize one message), it can mistake that content as **addressed to it** and respond / refuse / moralize / add a disclaimer instead of transforming. The cheaper the model, the likelier. The fix is in the system prompt:
 
-- **Always log "I ran, here's what I saw" — not only "I did something."** A poller that logs only when it adds rows makes a silent zero-result run indistinguishable from not running; emit a per-run `checked N · added N · skipped N`. Add temporary verbose `debug:` logging to diagnose why an upstream returns nothing, then revert once you've found the root cause.
-- **On total failure, write an explicit audit / fallback marker instead of nulling.** A scoring call that returns null writes nothing and leaves a silent gap in a timeline; write a `*_failed` audit row (and retry once) so the gap is visible and recoverable. Surface the upstream error body in client-facing errors, not a bare status code.
+- Narrow the **role** ("you are ONLY a translator / classifier"); state the input is **not addressed to it** ("one line from someone else's conversation"); **forbid the failure modes** ("NEVER respond / refuse / moralize / add a disclaimer"); pin the **output shape** ("output EXACTLY two lines `EN:` / `ZH:`") so a stray refusal is structurally obvious and easy to reject.
+- **Put hard constraints at the top of the prompt, not buried.** A "don't do X" a thousand-plus lines deep gets overridden when the injected context is saturated with the opposite signal — intermittent, context-triggered. Hoist it and name the trap.
 
-## 14. Third-party APIs / scraping
+## 13. Build / CI
 
-- **Rate-limit, jitter, and rotate when scraping a consumer platform, or the account gets flagged.** Up to ~hundred requests/day plus precise cron timing got an account warned / banned for "excessive AI use"; add a shared daily cap, reuse a session cache, jitter the cron to break its fingerprint, rotate query targets, and back off further on a warning.
-- **Private-repo webhook / API payloads omit fields public ones include.** GitHub returns an empty `payload.commits` for private repos; a `if (commits.length===0) continue` drops everything. Fall back to a secondary API (the compare endpoint) and always emit a marker — a failed enrichment still leaves a record.
-- **Prefer the cheapest API format that has the field you need, and verify version compat.** A `format=metadata` Gmail call raised `invalid_request` on the deployed googleapis version; `format=minimal` both worked and was cheaper when only `threadId` was needed. For multipart email, walk parts recursively and prefer HTML when the text/plain part is a near-empty placeholder.
-- **Scrape from a stable structured source, not best-effort HTML.** Title / body extraction via HTML regex returns a random element (often a comment, not the body); pull the token / id from the URL query and call the structured detail API.
+- **A lockfile is platform-specific.** A lockfile generated on macOS misses Linux's native optional deps (esbuild / tsx's `@emnapi/core`), and CI then fails `npm ci` on the Linux runner. Use `npm install` in CI, or generate a multi-platform lockfile — `npm install --package-lock-only` on a single OS won't capture other platforms' optionalDependencies.
+- **Don't depend on the CI runtime stripping TS for you.** A build that runs `node script.ts` assuming native TS strip breaks when the CI Node (22.x) doesn't strip and there's no `.nvmrc` / `engines` pin. Make the hook fail-soft (a committed fallback artifact) and pin the Node version.
+- **Static review systematically over-claims.** Static inference hunting bugs over-claims; an audit finding is trusted once you **reproduce it behaviorally** (one real run). Which is why verifying DB-bound paths means starting a real DB, not just tsc + unit tests.
 
-## 15. Frontend surfaces: PWA / Electron
+## 14. Observability
 
-- **Don't serve page HTML stale-while-revalidate.** A service worker caching navigation HTML stale-while-revalidate serves a stale theme / state and refreshes only in the background after the user has already navigated past. Use **network-first** for navigation / document requests (cache only as offline fallback), stale-while-revalidate for data / RSC; bump the SW version to flush old HTML. Handle iOS Safari's bfcache separately — a `pageshow` listener that reloads on a cookie / state mismatch.
-- **Persist Electron window position / size by viewport ratio, not absolute pixels.** Absolute pixels don't line up across different window sizes / maximize; store the viewport ratio so restore is stable. Clamp drag / restore to bounds so the title bar can't hide behind the menu bar, and give a double-click-title reset.
-- **Strip personal references before open-sourcing — and freeze it into a test.** Strip names / brand / private words out of the code before you open it; better, keep a scanner (this repo's `npm run scrub`) that blocks private residue from reaching a commit, rather than relying on remembering.
+- **Always log "I ran, here's what I saw" — not only "I did something."** A poller that logs only when it adds rows makes a silent zero-result run indistinguishable from not running; emit a per-run `checked N · added N · skipped N`. Add temporary `debug:` logging to diagnose why an upstream returns nothing, then revert.
+- **On total failure, write an explicit audit / fallback marker instead of nulling.** A scoring call that returns null writes nothing and leaves a silent gap; write a `*_failed` audit row (and retry once) so the gap is visible. Surface the upstream error body in client-facing errors, not a bare status code.
 
-## A note on consistency
+## 15. Third-party APIs / scraping
 
-These are engineering references, not part of the engine; adapt them to your stack when they land in your fork. There's only one bottom line, and it runs through all of it: **trust no claim, only external evidence.**
+- **Scrape from a stable structured source, not best-effort HTML.** Title / body extraction via HTML regex returns a random element (often a comment); pull the token / id from the URL query and call the structured detail API.
+- **Rate-limit, jitter, and rotate when scraping a consumer platform, or the account gets flagged** (a shared daily cap, a reused session cache, cron jitter to break the fingerprint, rotated targets, back off on a warning). **Private-repo webhook payloads omit fields public ones include** (GitHub returns an empty `payload.commits`) — fall back to the compare endpoint and always emit a marker. **Prefer the cheapest API format that has the field you need, and verify version compat** (`format=metadata` may 400; `format=minimal` both works and is cheaper).
+
+## 16. Frontend surfaces: PWA / Electron
+
+- **Don't serve page HTML stale-while-revalidate.** A service worker caching navigation HTML stale-while-revalidate serves a stale theme / state and refreshes in the background after the user has navigated past. Use **network-first** for navigation / document requests (cache only as offline fallback), stale-while-revalidate for data / RSC; bump the SW version to flush old HTML. Handle iOS Safari's bfcache separately (a `pageshow` listener that reloads on a state mismatch).
+- **Persist Electron window position / size by viewport ratio, not absolute pixels** — pixels don't line up across window sizes / maximize. Clamp drag / restore to bounds; give a double-click-title reset.
+
+---
+
+## Appendix · table-stakes (hygiene, skippable if experienced)
+
+These are caught by **tsc / one run / one deploy** (a loud, immediate error), so they stay out of the body — but a newcomer forking this may not know them all, so here they are, grouped:
+
+**Retry**
+- Prefer the official SDK: auto-retries connection errors / 408 / 409 / 429 / ≥500 with backoff, honors `retry-after`.
+- Hand-rolled raw-fetch: exponential backoff + jitter, honor `Retry-After`, branch on status (retry 429/5xx/529, not 4xx), cap attempts + an overall timeout.
+- Wrap every bare `fetch()` to an upstream in a retry helper (one `ETIMEDOUT` otherwise crashes the cron); outbound webhooks via a retry queue.
+- Different surface, different policy: interactive throws and lets the user resend; background / cron backs off and retries.
+
+**Config / auth**
+- Each entry point does its own `import "dotenv/config"` — a shared module assumes env is loaded, but an entry that didn't load it crashes.
+- "Cookie present" isn't auth: verify a **signed** cookie / token match, and re-check defensively per route.
+
+**DB / migrations**
+- Quote camelCase column names in raw SQL (`@@map` maps only the table; unquoted, Postgres lowercases → `42703`).
+- A single-row upsert keyed only on type silently overwrites another of the same type → key on `(type, title)`.
+- Make migrations idempotent (`ADD COLUMN IF NOT EXISTS`) and check them into the repo; one applied by hand and never committed is a bomb.
+- Add a nullable column with a `slice()` fallback + warning, not a hard block on old rows.
+
+**Time / cron**
+- One timezone source = an IANA zone (e.g. `Asia/Shanghai`), not a numeric offset (breaks across DST).
+- Every cron schedule carries `{ timezone: … }`, or it fires at the wrong local hour.
+- Cap the agentic loop (`maxTurns`) and lock concurrent ticks.
+
+**JSON / provider**
+- Provider-compat endpoints reject native fields (`cache_control` on the system message, not the tools array); always surface the upstream **response body** in errors, not just the status.
+- Collapse JSON extraction into **one** helper, not copies that drift.
+
+**Cost / caching**
+- Move a per-event LLM sweep off the hot path: a week's evidence doesn't change within a day, so a daily cron drops it from hundreds a month to cents.
+
+**Open-sourcing**
+- Strip personal references before open-sourcing, and freeze it into a scanner (this repo's `npm run scrub`) that blocks private residue from a commit, rather than relying on remembering.
+
+---
+
+There's only one bottom line, and it runs through all of it: **trust no claim, only external evidence.**

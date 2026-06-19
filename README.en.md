@@ -7,7 +7,7 @@ A **personal, single-user agent memory OS** — an agentic memory + self-drive e
 For the architecture, read **[ARCHITECTURE.en.md](./ARCHITECTURE.en.md)** — everything below is just parts.
 For the autonomous-agency layer (cron wake → drive/concern → action selection, DO_NOTHING one option not the default → dispatch),
 read **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md)** — the architecture argument, the full citations, and the honest fault lines.
-For the engineering patterns when wiring a surface (prompt caching / retry / credential rotation), see **[docs/PATTERNS.en.md](./docs/PATTERNS.en.md)**.
+The engineering pitfalls we hit building this are collected in **[docs/PATTERNS.en.md](./docs/PATTERNS.en.md)** — caching, cold-start, Prisma/pgvector, retrieval, agent safety, retry, time, and more (sixteen areas), with the silent and domain-specific ones up front and the table-stakes hygiene in an appendix. Worth a read before you fork.
 For the epistemic layer (retrieval-first / no hallucinated recall / attribution checks / symmetric verification / concern self-checks), see **[docs/EPISTEMIC.en.md](./docs/EPISTEMIC.en.md)** — the operational manual for the AGENTS.md epistemic layer.
 
 > **Status: engine complete, with tests and docs.** hybrid retrieval, self-drive / concern, the
@@ -123,7 +123,7 @@ epistemic half is the exception — it is method, not a stance to own. See **[do
 
 The agent walks a conversation's lifecycle through these three MCP tools:
 
-- **`reentry`** — call once at the start of a new window. Loads profile, active states, topics, anchors (CORE / BOUNDARY / PREFERENCE), recent episodes, digests, and recent events into one cold-start context. Pass a `tag` (window id, suggested `cc-YYMMDDHHMM`) to drop a boot anchor that this window's later `reentry_delta` calls anchor to.
+- **`reentry`** — call once at the start of a new window. Loads profile, active states, topics, anchors (CORE / BOUNDARY / PREFERENCE), recent episodes, digests, and recent events into one cold-start context. Pass a `tag` (window id, suggested `cc-YYMMDDHHMM`) to drop a boot anchor that this window's later `reentry_delta` calls anchor to. **Call it from the agent that will act — don't hand the read to a subagent**: a relay only returns a summary, and the nuance that lets the agent actually inhabit the state is lost through it (see [PATTERNS §2](./docs/PATTERNS.en.md)).
 - **`reentry_delta`** — call mid-session for only what's **new** since the last reentry / delta (following the tagged anchor chain); cheaper than a full reentry.
 - **`closeout`** — call once before a window closes. Saves the session as one EPISODE (the arc only — not a replay of facts already written to their tables), a self-score (valence / arousal, plus a `concernKey` when negative and recurring), keyMemories / stateUpdates / observations / pendingItems, builds similar-edges, and logs a session-end marker.
 

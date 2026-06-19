@@ -7,7 +7,7 @@
 关于架构设计请读 **[ARCHITECTURE.md](./ARCHITECTURE.md)**——下面这些都只是零件。
 关于 autonomous-agency 层（cron wake → drive/concern → action selection，DO_NOTHING 是一个选项而非默认 → dispatch），
 请读 **[docs/AUTONOMY.md](./docs/AUTONOMY.md)**——架构论证、完整 citations，以及诚实的断层线。
-搭 surface 时的工程模式（prompt caching / retry / 凭证轮转）见 **[docs/PATTERNS.md](./docs/PATTERNS.md)**。
+搭这套东西踩过的工程坑都收在 **[docs/PATTERNS.md](./docs/PATTERNS.md)**——缓存、冷启动、Prisma/pgvector、检索、agent 安全、retry、时间等十六类,无声失败和域内专有的在前、基础卫生(table-stakes)附在文末。fork 前值得过一遍。
 认知纪律（检索优先 / 不编 / 归因 / 对称验证 / concern self-check）见 **[docs/EPISTEMIC.md](./docs/EPISTEMIC.md)**——这是 AGENTS.md epistemic 层的操作手册。
 
 > **状态：引擎完整，有测试有文档。** hybrid retrieval、self-drive / concern、可复现 eval、对话式
@@ -116,7 +116,7 @@ Epistemic 那一半是例外——它是方法，不是一个要去认领的 sta
 
 agent 在一段对话里按这三个 MCP 工具走完整个生命周期:
 
-- **`reentry`** —— 新窗口开头调一次。把 profile、active states、topics、anchors(CORE / BOUNDARY / PREFERENCE)、近期 episodes、digests、近期 events 一次性载入成冷启动上下文。可传 `tag`(窗口标识,建议 `cc-YYMMDDHHMM`)落一个 boot 锚点,这个窗口之后的 `reentry_delta` 都锚到它。
+- **`reentry`** —— 新窗口开头调一次。把 profile、active states、topics、anchors(CORE / BOUNDARY / PREFERENCE)、近期 episodes、digests、近期 events 一次性载入成冷启动上下文。可传 `tag`(窗口标识,建议 `cc-YYMMDDHHMM`)落一个 boot 锚点,这个窗口之后的 `reentry_delta` 都锚到它。**由会行动的那个 agent 自己调,别甩给 subagent 代读**——转述只回一个摘要,而让 agent 真正进入状态的 nuance 过一道摘要就丢了(展开见 [PATTERNS §2](./docs/PATTERNS.md))。
 - **`reentry_delta`** —— 会话中途调,只取自上次 reentry / delta 以来**新增**的(按 `tag` 沿锚链),比整段 reentry 便宜。
 - **`closeout`** —— 窗口结束前调一次。把这段对话存成一条 EPISODE(只写 arc,不复述已落表的事实)+ 一条 self-score(valence / arousal,负向且复发可带 `concernKey`)+ keyMemories / stateUpdates / observations / pendingItems,建相似边,落一个会话结束标记。
 

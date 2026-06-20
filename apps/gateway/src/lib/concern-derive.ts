@@ -357,8 +357,7 @@ export type DriveDef = { key: string; label: string; shape: DriveShape; backing:
 
 // EXAMPLE roster — illustrations, NOT your real drives. Rename them, point them at
 // your own backing, add or drop dims. One per shape so every curve is exercised.
-// (The labels here are deliberately generic; pick names that fit your companion —
-// e.g. 陪伴 / 欲望 / 深谈 / 债务渴求.)
+// (The labels here are deliberately generic; rename them to fit your use case.)
 const DEFAULT_DRIVE_DIMS: DriveDef[] = [
   { key: "companionship", label: "companionship", shape: "symmetric", backing: { memoryTypes: ["EPISODE"], experiencers: ["SELF", "SHARED"], valenceFloor: 0.3, presence: "lastChat" }, wantScale: WANT_SCALE },
   { key: "desire", label: "desire", shape: "refractory", backing: { memoryTypes: ["RESTRICTED"], experiencers: ["SELF", "SHARED"] } },

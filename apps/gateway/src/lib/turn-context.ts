@@ -193,11 +193,11 @@ ${r.exampleSnippets ? `- example: ${r.exampleSnippets}` : ""}`
   // buildPersona, which returns the empty default unless a persona doc is set).
   const blockIdentity = opts.identityBuilder(registersText);
 
-  const obsHer = observations
+  const obsUser = observations
     .filter((o: any) => o.subject === "user")
     .map((o: any) => `- **${o.title}** (${o.key}): ${o.content}`)
     .join("\n");
-  const obsClaude = observations
+  const obsSelf = observations
     .filter((o: any) => o.subject === "self")
     .map((o: any) => `- **${o.title}** (${o.key}): ${o.content}`)
     .join("\n");
@@ -206,10 +206,10 @@ ${r.exampleSnippets ? `- example: ${r.exampleSnippets}` : ""}`
 ${profileText}
 
 ## Observations about the user (importance>=4)
-${obsHer || "- none"}
+${obsUser || "- none"}
 
 ## Observations about the assistant (importance>=4)
-${obsClaude || "- none"}
+${obsSelf || "- none"}
 
 ## People (entities the user mentioned; nicknames/descriptions also resolve)
 ${personEntities.length > 0 ? personEntities.map((e: any) => `- **${e.name}**${e.summary ? `: ${e.summary}` : ""}`).join("\n") : "- none"}

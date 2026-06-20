@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { numEnv } from "./lib/env.js";
+import { groupByIdleGap } from "./lib/session-group.js";
 import cron from "node-cron";
 import prisma from "./db.js";
 import { Prisma } from "@prisma/client";
@@ -281,6 +282,52 @@ async function scanSelfEmotion(): Promise<{ created: number; updated: number; de
 const TOPIC_JUDGE_CRITERION = process.env.INTEL_TOPIC_CRITERION || "";
 const TOPIC_SLUG = process.env.INTEL_TOPIC_SLUG || "";
 
+// Write the per-session self-score memory (SELF_SCORE) from the digest's v/a.
+// Dedup by the date+time title so a re-run doesn't double-write. RESOLVED — a
+// session score is a snapshot, not an open concern. Tolerates its own write
+// failure (logs, returns written:false) so a score error never fails the digest.
+export async function writeSessionScore(args: {
+  dateStr: string;
+  startHHMM: string;
+  valence: number;
+  arousal: number | null;
+  note: string;
+  firstAt: Date;
+  lastAt: Date;
+}): Promise<{ written: boolean }> {
+  const scoreTitle = `chat-score ${args.dateStr} ${args.startHHMM}`;
+  const exists = await prisma.memory.findFirst({
+    where: { memoryType: "SELF_SCORE", title: scoreTitle },
+    select: { id: true },
+  });
+  if (exists) return { written: false };
+  const body = args.note || `${args.dateStr} session`;
+  try {
+    await prisma.memory.create({
+      data: {
+        memoryType: "SELF_SCORE",
+        title: scoreTitle,
+        summary: body,
+        content: body,
+        importance: 3,
+        experiencer: "SELF",
+        resolution: "RESOLVED",
+        valence: args.valence,
+        arousal: args.arousal,
+        sourceType: "CHAT",
+        authorModel: roleModel("INTEL_SCORE_AUTHOR_MODEL"),
+        digestTimeStart: args.firstAt,
+        digestTimeEnd: args.lastAt,
+        validFrom: args.lastAt,
+      },
+    });
+    return { written: true };
+  } catch (err: any) {
+    console.error(`[dialogue_digest] ${args.dateStr} self-score write failed:`, err.message);
+    return { written: false };
+  }
+}
+
 // Dialogue digest layer — scans CHAT events in a recent window, groups them into
 // sessions by an idle gap, and compresses each session into one EPISODE memory.
 // dedup via title prefix (date-based); the first run backfills recent history.
@@ -314,16 +361,7 @@ export async function scanDialogueDigests(
   // Group by session, not by calendar day. A session = a continuous conversation;
   // a gap larger than GAP_H starts a new session. events are already time-ascending.
   const GAP_H = numEnv("INTEL_SESSION_GAP_H", 4);
-  const sessions: (typeof events)[] = [];
-  for (const e of events) {
-    const cur = sessions[sessions.length - 1];
-    const prevE = cur?.[cur.length - 1];
-    if (!cur || e.createdAt.getTime() - prevE!.createdAt.getTime() > GAP_H * 3600 * 1000) {
-      sessions.push([e]);
-    } else {
-      cur.push(e);
-    }
-  }
+  const sessions = groupByIdleGap(events, GAP_H);
 
   let created = 0, skipped = 0, failed = 0;
 
@@ -473,35 +511,15 @@ Output JSON (JSON only, no markdown fence):
 
     // session self-score from the digest's v/a. dedup by title.
     if (scoreV !== null) {
-      const scoreTitle = `chat-score ${dateStr} ${startHHMM}`;
-      const existsScore = await prisma.memory.findFirst({
-        where: { memoryType: "SELF_SCORE", title: scoreTitle },
-        select: { id: true },
+      await writeSessionScore({
+        dateStr,
+        startHHMM,
+        valence: scoreV,
+        arousal: scoreA,
+        note: scoreNote,
+        firstAt: dayEvents[0].createdAt,
+        lastAt: dayEvents[dayEvents.length - 1].createdAt,
       });
-      if (!existsScore) {
-        try {
-          await prisma.memory.create({
-            data: {
-              memoryType: "SELF_SCORE",
-              title: scoreTitle,
-              summary: scoreNote || `${dateStr} session`,
-              content: scoreNote || `${dateStr} session`,
-              importance: 3,
-              experiencer: "SELF",
-              resolution: "RESOLVED",
-              valence: scoreV,
-              arousal: scoreA,
-              sourceType: "CHAT",
-              authorModel: roleModel("INTEL_SCORE_AUTHOR_MODEL"),
-              digestTimeStart: dayEvents[0].createdAt,
-              digestTimeEnd: dayEvents[dayEvents.length - 1].createdAt,
-              validFrom: dayEvents[dayEvents.length - 1].createdAt,
-            },
-          });
-        } catch (err: any) {
-          console.error(`[dialogue_digest] ${dateStr} self-score write failed:`, err.message);
-        }
-      }
     }
   }
 

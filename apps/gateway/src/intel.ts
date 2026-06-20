@@ -310,10 +310,9 @@ export async function scanDialogueDigests(
   // Ensure the topic row exists when topic routing is configured (the LLM may
   // place TOPIC_SLUG into suggested_topic_slug). No-op when no slug is set.
   if (TOPIC_SLUG) {
-    // Domain has no GENERAL (enum: WORK|LOVE|SYSTEM|RESEARCH); the bare string was an
-    // invalid value masked by `as any` that Postgres rejects on insert. A chat-digest
-    // routing topic is system-managed → SYSTEM.
-    await prisma.topic.upsert({ where: { slug: TOPIC_SLUG }, update: {}, create: { slug: TOPIC_SLUG, name: TOPIC_SLUG, domain: "SYSTEM" } });
+    // A chat-digest routing topic has no specific life-domain → the neutral GENERAL
+    // domain (added to the Domain enum in migration 2).
+    await prisma.topic.upsert({ where: { slug: TOPIC_SLUG }, update: {}, create: { slug: TOPIC_SLUG, name: TOPIC_SLUG, domain: "GENERAL" } });
   }
 
   // Group by session, not by calendar day. A session = a continuous conversation;

@@ -4,7 +4,7 @@ import cron from "node-cron";
 import prisma from "./db.js";
 import { Prisma } from "@prisma/client";
 import { localDate, localDateTime, DEFAULT_TZ } from "./time.js";
-import { embedText, embedAndStore, writeEmbedding, STALE_EMBEDDING_WHERE } from "./lib/embed.js";
+import { embedAndStore, STALE_EMBEDDING_WHERE, type EmbeddableTable } from "./lib/embed.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
@@ -508,55 +508,54 @@ Output JSON (JSON only, no markdown fence):
   return { created, skipped, failed };
 }
 
-// Sweep memories with NULL embedding (any reason: provider down when the memory
-// was written, key missing, backfill never ran, a schema push dropped then
-// re-added the column leaving rows NULL).
-// Limit 500/run — cost-bounded enough to one-shot a backfill.
-// Same discipline extended to two more tables (observations + core_profile),
-// which were previously only covered by a one-off migrate script.
+// Sweep rows whose embedding is missing or stale (STALE_EMBEDDING_WHERE: NULL —
+// newly written / cleared — or content edited after creation with the embedding
+// not following) and re-embed them. Covers all three embeddable tables; memories
+// was inline here while observations + core_profile lived in a one-off migrate
+// script. Per-run limits are cost bounds (memories carries the most churn → 500).
+//
+// observations note: upsert is frequent (unique key); a raw UPDATE does not bump
+// Prisma's @updatedAt, so this sweep never pushes updatedAt forward and will not
+// self-trigger on a row it just embedded.
+export const SWEEP_TABLES: ReadonlyArray<{
+  table: EmbeddableTable;
+  limit: number;
+  // memories embeds title + (summary || content); the other two have no summary
+  // column, so they select + embed title + content only.
+  needsSummary: boolean;
+  embedInput: (row: any) => string;
+}> = [
+  { table: "memories", limit: 500, needsSummary: true, embedInput: (r) => `${r.title}\n${r.summary || r.content}` },
+  { table: "observations", limit: 100, needsSummary: false, embedInput: (r) => `${r.title}\n${r.content}` },
+  { table: "core_profile", limit: 100, needsSummary: false, embedInput: (r) => `${r.title}\n${r.content}` },
+];
+
+// Re-embed one table's stale rows. The column list is a fixed pair (the boolean
+// picks whether `summary` is included) and the table name comes from the typed
+// config above — never free user text, so the Prisma.raw splices carry no
+// injection surface. Returns (attempted, patched) for that table.
+export async function sweepTable(cfg: (typeof SWEEP_TABLES)[number]): Promise<{ patched: number; attempted: number }> {
+  const cols = cfg.needsSummary
+    ? Prisma.raw("id, title, content, summary")
+    : Prisma.raw("id, title, content");
+  const rows: any[] = await prisma.$queryRaw(Prisma.sql`
+    SELECT ${cols} FROM ${Prisma.raw(cfg.table)}
+    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
+    LIMIT ${cfg.limit}
+  `);
+  let patched = 0;
+  for (const row of rows) {
+    if (await embedAndStore(cfg.table, row.id, cfg.embedInput(row))) patched++;
+  }
+  return { patched, attempted: rows.length };
+}
+
 async function sweepNullEmbeddings(): Promise<{ patched: number; attempted: number }> {
   let patched = 0, attempted = 0;
-  // 1. embedding IS NULL — newly written or cleared
-  // 2. updatedAt > createdAt + 1min AND embeddingAt < updatedAt — content was
-  //    edited but the embedding did not follow
-  const rows: any[] = await prisma.$queryRaw(Prisma.sql`
-    SELECT id, title, content, summary FROM memories
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
-    LIMIT 500
-  `);
-  attempted += rows.length;
-  for (const m of rows) {
-    const emb = await embedText(`${m.title}\n${m.summary || m.content}`);
-    if (!emb) continue;
-    await writeEmbedding("memories", m.id, emb);
-    patched++;
-  }
-  // observations: upsert is frequent (unique key); embeddingAt < updatedAt means
-  // content changed but the embedding did not. Raw UPDATE does not bump Prisma's
-  // @updatedAt, so the sweep does not push updatedAt forward and will not self-trigger.
-  const obsRows: any[] = await prisma.$queryRaw(Prisma.sql`
-    SELECT id, title, content FROM observations
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
-    LIMIT 100
-  `);
-  attempted += obsRows.length;
-  for (const o of obsRows) {
-    const emb = await embedText(`${o.title}\n${o.content}`);
-    if (!emb) continue;
-    await writeEmbedding("observations", o.id, emb);
-    patched++;
-  }
-  const profRows: any[] = await prisma.$queryRaw(Prisma.sql`
-    SELECT id, title, content FROM core_profile
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
-    LIMIT 100
-  `);
-  attempted += profRows.length;
-  for (const c of profRows) {
-    const emb = await embedText(`${c.title}\n${c.content}`);
-    if (!emb) continue;
-    await writeEmbedding("core_profile", c.id, emb);
-    patched++;
+  for (const cfg of SWEEP_TABLES) {
+    const r = await sweepTable(cfg);
+    patched += r.patched;
+    attempted += r.attempted;
   }
   return { patched, attempted };
 }

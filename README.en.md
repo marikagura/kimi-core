@@ -25,7 +25,7 @@ For the epistemic layer (retrieval-first / no hallucinated recall / attribution 
 - **Active self-drive** — Panksepp-style affective drives that *surface* memories proactively, plus a
   concern engine (open / resolved · decay · recurrence · grounding).
 - **Event sourcing + append-only + human curation** — no LLM auto-consolidation (its failure mode is
-  silent corruption). Every fact about you passes through your own hand and confirmation.
+  silent corruption). Every fact about you passes through your own hand and confirmation. This is a necessary, recurring operation (not optional) — how to do it: [docs/CURATION.md](docs/CURATION.md).
 - **Reproducible retrieval eval** — hit@5 / hit@10 / MRR / nDCG@10 / set-recall@10, with a
   hard-negative control (expectNone) and reranker / component A/B. Labeled by keyword (not row-ids, so
   it survives a re-seed); each run writes a trend Event.

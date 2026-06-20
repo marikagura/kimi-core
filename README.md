@@ -22,7 +22,7 @@
 - **Active self-drive** —— Panksepp 式的情感 drives，会主动地把记忆 *surface* 出来，外加一个
   concern 引擎(open / resolved · decay · recurrence · grounding)。
 - **Event sourcing + append-only + 人工 curation** —— 没有 LLM 自动 consolidation（它的 failure mode 是
-  静默腐蚀）。每一条关于你的 fact 都要过你自己的手并经你确认。
+  静默腐蚀）。每一条关于你的 fact 都要过你自己的手并经你确认。这是必要的周期性运维（不是可选项）——怎么做见 [docs/CURATION.md](docs/CURATION.md)。
 - **可复现的 retrieval eval** —— hit@5 / hit@10 / MRR / nDCG@10 / set-recall@10，带
   hard-negative 负控(expectNone)和 reranker / 组件 A/B。按 keyword 标注（不绑 row-id，
   re-seed 库也不失效），每跑写一条趋势 Event。这些数字你可以自己重跑。

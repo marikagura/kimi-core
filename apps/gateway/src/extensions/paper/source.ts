@@ -43,6 +43,16 @@ export interface PubMedConfig {
 
 const EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
 
+// Minimal shape of an NCBI esummary `result[uid]` entry (only the fields read here).
+type ESummaryArticle = {
+  uid?: string | number;
+  title?: string;
+  authors?: Array<{ name?: string }>;
+  fulljournalname?: string;
+  source?: string;
+  pubdate?: string;
+};
+
 export function pubMedAdapter(cfg: PubMedConfig): SourceAdapter {
   return {
     name: "pubmed",
@@ -56,7 +66,7 @@ export function pubMedAdapter(cfg: PubMedConfig): SourceAdapter {
         `&reldate=${days}&datetype=pdat&retmode=json&retmax=${retmax}&sort=pub_date`;
       const sres = await fetchWithRetry(searchUrl);
       if (!sres.ok) throw new Error(`pubmed esearch ${sres.status}`);
-      const sdata = (await sres.json()) as any;
+      const sdata = (await sres.json()) as { esearchresult?: { idlist?: string[] } };
       const ids: string[] = sdata.esearchresult?.idlist ?? [];
       if (!ids.length) return [];
 
@@ -64,21 +74,21 @@ export function pubMedAdapter(cfg: PubMedConfig): SourceAdapter {
       const sumUrl = `${EUTILS}/esummary.fcgi?db=pubmed&id=${ids.join(",")}&retmode=json`;
       const ures = await fetchWithRetry(sumUrl);
       if (!ures.ok) throw new Error(`pubmed esummary ${ures.status}`);
-      const udata = (await ures.json()) as any;
+      const udata = (await ures.json()) as { result?: Record<string, ESummaryArticle> };
 
       const wl = cfg.journalWhitelist?.map((j) => j.toLowerCase());
       return ids
         .map((id) => udata.result?.[id])
-        .filter(Boolean)
-        .filter((a: any) => {
+        .filter((a): a is ESummaryArticle => Boolean(a))
+        .filter((a) => {
           if (!wl?.length) return true;
           const journal = (a.fulljournalname || a.source || "").toLowerCase();
           return wl.some((j) => journal.includes(j));
         })
-        .map((a: any): PaperHit => ({
+        .map((a): PaperHit => ({
           externalId: String(a.uid),
           title: a.title || "",
-          authors: (a.authors || []).map((x: any) => x.name).slice(0, 5).join(", "),
+          authors: (a.authors || []).map((x) => x.name).slice(0, 5).join(", "),
           journal: a.fulljournalname || a.source || undefined,
           url: `https://pubmed.ncbi.nlm.nih.gov/${a.uid}/`,
           publishedAt: a.pubdate || undefined,

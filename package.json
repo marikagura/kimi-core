@@ -24,6 +24,7 @@
     "eval": "tsx apps/gateway/src/eval/run.ts",
     "eval:history": "tsx apps/gateway/src/eval/history.ts",
     "lint": "eslint .",
+    "paper:loop": "tsx apps/gateway/src/extensions/paper/loop.ts",
     "test": "vitest run"
   },
   "devDependencies": {

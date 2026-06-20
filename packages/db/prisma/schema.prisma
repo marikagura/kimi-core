@@ -389,6 +389,34 @@ enum TopicStatus {
   ARCHIVED
 }
 
+// Paper extension — academic note store, independent of the memory engine
+// (memory / topic / KG). Written by the paper extension's tools + loop. Lives in
+// the core schema only because Prisma uses a single schema file; the rest of the
+// extension is under apps/gateway/src/extensions/paper/. See that dir to disable.
+model PaperNote {
+  id          String                       @id @default(uuid())
+  externalId  String?                      @unique // source UID (e.g. a PubMed UID) — dedup key
+  title       String
+  journal     String?
+  authors     String?
+  url         String?
+  publishedAt DateTime?
+  knowledge   String // distilled findings / methods / takeaways
+  relevance   String? // why it matters / which research axis it connects to
+  axis        String? // free-text academic-axis tag
+  hasFullText Boolean                      @default(false)
+  importance  Int                          @default(3)
+  isActive    Boolean                      @default(true)
+  pinned      Boolean                      @default(false)
+  // pgvector column for future semantic search — see Memory.embedding note.
+  embedding   Unsupported("vector(1536)")?
+  embeddingAt DateTime?
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+
+  @@map("paper_notes")
+}
+
 enum Domain {
   WORK
   LOVE

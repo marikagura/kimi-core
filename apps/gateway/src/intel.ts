@@ -1,15 +1,17 @@
 import "dotenv/config";
 import { numEnv } from "./lib/env.js";
+import { groupByIdleGap } from "./lib/session-group.js";
 import cron from "node-cron";
 import prisma from "./db.js";
-import { Prisma } from "@prisma/client";
 import { localDate, localDateTime, DEFAULT_TZ } from "./time.js";
-import { fetchWithRetry } from "./fetch-retry.js";
-import { embedText, embedAndStore, writeEmbedding, STALE_EMBEDDING_WHERE } from "./lib/embed.js";
+import { embedAndStore } from "./lib/embed.js";
+import { sweepNullEmbeddings } from "./lib/embedding-sweep.js";
+import { writeSessionScore } from "./lib/session-score.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
-import { roleModel, llmBaseUrl, llmApiKey } from "./lib/models.js";
+import { roleModel } from "./lib/models.js";
+import { chatCompletion } from "./lib/llm.js";
 import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
 import { firstJsonObject } from "./lib/json-extract.js";
 
@@ -36,39 +38,21 @@ const PROVIDER_ORDER = (process.env.LLM_PROVIDER_ORDER || "")
 // easy rollback of candidate extraction.
 const CHAT_INTEL_OFF = true;
 
+const DAY_MS = 86_400_000;
+
+// Larger intel / digest / sweep caller: shares chatCompletion (fetch + 180s
+// timeout + throw) and supplies the INTEL_MODEL role default, OpenRouter provider
+// routing, and optional extended thinking. (callLLMShort in lib/llm.ts is the
+// lighter sibling — short default + trimmed result.)
 async function callLLM(system: string, user: string, maxTokens = 2000, modelOverride?: string, thinkingTokens?: number) {
-  const res = await fetchWithRetry(`${llmBaseUrl()}/chat/completions`, {
-    // LLM completions (esp. the extended-thinking self-sweep) can legitimately run
-    // well past the 60s default; give them room so a slow-but-valid call isn't aborted.
-    timeoutMs: 180_000,
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${llmApiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: modelOverride || roleModel("INTEL_MODEL"),
-      // Optional OpenRouter-style provider routing, sent only when LLM_PROVIDER_ORDER
-      // is set. Other OpenAI-compatible endpoints ignore an unknown `provider` field.
-      ...(PROVIDER_ORDER.length && {
-        provider: { order: PROVIDER_ORDER, allow_fallbacks: true },
-      }),
-      // Extended thinking (used by self-sweep). thinkingTokens must be < maxTokens
-      // (thinking counts toward total). Omitted → no thinking; existing calls unaffected.
-      ...(thinkingTokens && { reasoning: { max_tokens: thinkingTokens } }),
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      max_tokens: maxTokens,
-    }),
+  return chatCompletion({
+    system,
+    user,
+    model: modelOverride || roleModel("INTEL_MODEL"),
+    maxTokens,
+    providerOrder: PROVIDER_ORDER,
+    thinkingTokens,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`LLM ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const data = (await res.json()) as any;
-  return data.choices?.[0]?.message?.content || "";
 }
 
 function parseCandidates(response: string): any[] {
@@ -116,7 +100,7 @@ async function getLastRun(): Promise<Date> {
     where: { eventType: "SYSTEM", source: "intel" },
     orderBy: { createdAt: "desc" },
   });
-  return last?.createdAt || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  return last?.createdAt || new Date(Date.now() - 7 * DAY_MS);
 }
 
 async function getExistingMemoryTitles(): Promise<string> {
@@ -311,7 +295,7 @@ export async function scanDialogueDigests(
   const _cutoffEnd = cutoffEnd ?? new Date(now);
   // 7-day look-back: catch recently un-digested sessions (backfill safety net).
   // Already-digested sessions are skipped by the title-date dedup.
-  const _cutoffStart = cutoffStart ?? new Date(now - 7 * 24 * 3600 * 1000);
+  const _cutoffStart = cutoffStart ?? new Date(now - 7 * DAY_MS);
 
   const events = await prisma.event.findMany({
     where: {
@@ -326,22 +310,15 @@ export async function scanDialogueDigests(
   // Ensure the topic row exists when topic routing is configured (the LLM may
   // place TOPIC_SLUG into suggested_topic_slug). No-op when no slug is set.
   if (TOPIC_SLUG) {
-    await prisma.topic.upsert({ where: { slug: TOPIC_SLUG }, update: {}, create: { slug: TOPIC_SLUG, name: TOPIC_SLUG, domain: "GENERAL" as any } });
+    // A chat-digest routing topic has no specific life-domain → the neutral GENERAL
+    // domain (added to the Domain enum in migration 2).
+    await prisma.topic.upsert({ where: { slug: TOPIC_SLUG }, update: {}, create: { slug: TOPIC_SLUG, name: TOPIC_SLUG, domain: "GENERAL" } });
   }
 
   // Group by session, not by calendar day. A session = a continuous conversation;
   // a gap larger than GAP_H starts a new session. events are already time-ascending.
   const GAP_H = numEnv("INTEL_SESSION_GAP_H", 4);
-  const sessions: (typeof events)[] = [];
-  for (const e of events) {
-    const cur = sessions[sessions.length - 1];
-    const prevE = cur?.[cur.length - 1];
-    if (!cur || e.createdAt.getTime() - prevE!.createdAt.getTime() > GAP_H * 3600 * 1000) {
-      sessions.push([e]);
-    } else {
-      cur.push(e);
-    }
-  }
+  const sessions = groupByIdleGap(events, GAP_H);
 
   let created = 0, skipped = 0, failed = 0;
 
@@ -491,92 +468,19 @@ Output JSON (JSON only, no markdown fence):
 
     // session self-score from the digest's v/a. dedup by title.
     if (scoreV !== null) {
-      const scoreTitle = `chat-score ${dateStr} ${startHHMM}`;
-      const existsScore = await prisma.memory.findFirst({
-        where: { memoryType: "SELF_SCORE", title: scoreTitle },
-        select: { id: true },
+      await writeSessionScore({
+        dateStr,
+        startHHMM,
+        valence: scoreV,
+        arousal: scoreA,
+        note: scoreNote,
+        firstAt: dayEvents[0].createdAt,
+        lastAt: dayEvents[dayEvents.length - 1].createdAt,
       });
-      if (!existsScore) {
-        try {
-          await prisma.memory.create({
-            data: {
-              memoryType: "SELF_SCORE",
-              title: scoreTitle,
-              summary: scoreNote || `${dateStr} session`,
-              content: scoreNote || `${dateStr} session`,
-              importance: 3,
-              experiencer: "SELF",
-              resolution: "RESOLVED",
-              valence: scoreV,
-              arousal: scoreA,
-              sourceType: "CHAT",
-              authorModel: roleModel("INTEL_SCORE_AUTHOR_MODEL"),
-              digestTimeStart: dayEvents[0].createdAt,
-              digestTimeEnd: dayEvents[dayEvents.length - 1].createdAt,
-              validFrom: dayEvents[dayEvents.length - 1].createdAt,
-            },
-          });
-        } catch (err: any) {
-          console.error(`[dialogue_digest] ${dateStr} self-score write failed:`, err.message);
-        }
-      }
     }
   }
 
   return { created, skipped, failed };
-}
-
-// Sweep memories with NULL embedding (any reason: provider down when the memory
-// was written, key missing, backfill never ran, a schema push dropped then
-// re-added the column leaving rows NULL).
-// Limit 500/run — cost-bounded enough to one-shot a backfill.
-// Same discipline extended to two more tables (observations + core_profile),
-// which were previously only covered by a one-off migrate script.
-async function sweepNullEmbeddings(): Promise<{ patched: number; attempted: number }> {
-  let patched = 0, attempted = 0;
-  // 1. embedding IS NULL — newly written or cleared
-  // 2. updatedAt > createdAt + 1min AND embeddingAt < updatedAt — content was
-  //    edited but the embedding did not follow
-  const rows: any[] = await prisma.$queryRaw(Prisma.sql`
-    SELECT id, title, content, summary FROM memories
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
-    LIMIT 500
-  `);
-  attempted += rows.length;
-  for (const m of rows) {
-    const emb = await embedText(`${m.title}\n${m.summary || m.content}`);
-    if (!emb) continue;
-    await writeEmbedding("memories", m.id, emb);
-    patched++;
-  }
-  // observations: upsert is frequent (unique key); embeddingAt < updatedAt means
-  // content changed but the embedding did not. Raw UPDATE does not bump Prisma's
-  // @updatedAt, so the sweep does not push updatedAt forward and will not self-trigger.
-  const obsRows: any[] = await prisma.$queryRaw(Prisma.sql`
-    SELECT id, title, content FROM observations
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
-    LIMIT 100
-  `);
-  attempted += obsRows.length;
-  for (const o of obsRows) {
-    const emb = await embedText(`${o.title}\n${o.content}`);
-    if (!emb) continue;
-    await writeEmbedding("observations", o.id, emb);
-    patched++;
-  }
-  const profRows: any[] = await prisma.$queryRaw(Prisma.sql`
-    SELECT id, title, content FROM core_profile
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
-    LIMIT 100
-  `);
-  attempted += profRows.length;
-  for (const c of profRows) {
-    const emb = await embedText(`${c.title}\n${c.content}`);
-    if (!emb) continue;
-    await writeEmbedding("core_profile", c.id, emb);
-    patched++;
-  }
-  return { patched, attempted };
 }
 
 // Truncate to max chars, preferring a clean sentence boundary. If the last
@@ -646,7 +550,7 @@ async function runAll() {
   // forever. Items still OPEN after 7 days → EXPIRED. Still visible in backstage,
   // but no longer part of the active backlog.
   try {
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - 7 * DAY_MS);
     const expired = await prisma.pendingItem.updateMany({
       where: {
         status: "OPEN",

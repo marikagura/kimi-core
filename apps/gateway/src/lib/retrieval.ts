@@ -372,13 +372,10 @@ export async function scoreMemories(
   // toggle only zeros the *weighted* contribution, not this diagnostic).
   lastMaxSem = rows.reduce((mx, m) => Math.max(mx, Number(m.sem_sim) || 0), 0);
 
-  // Survivors of hybrid scoring + filter, sorted by `final` (high→low). The
-  // `.slice(0, limit)` is deferred below so the rerank branch can take a wider
-  // candidate pool from the same sorted array. Splitting a (mutating) `.sort()`
-  // from a (pure) `.slice()` is behavior-identical.
-  // Score every row (pure scoreRow) → keep survivors (pure passesFilter) →
-  // sort by `final` high→low. .slice(0, limit) is deferred so the rerank branch
-  // can take a wider pool from the same sorted array.
+  // Score every row (pure scoreRow) → keep survivors (pure passesFilter) → sort
+  // by `final` (high→low). The `.slice(0, limit)` is deferred below so the rerank
+  // branch can take a wider candidate pool from the same sorted array; splitting a
+  // (mutating) `.sort()` from a (pure) `.slice()` is behavior-identical.
   // NOTE: rerank deliberately does NOT touch passesFilter — it runs on raw
   // cosine/kw/entity signals (a different scale), so it only RE-ORDERS survivors.
   const sortedSurvivors = rows

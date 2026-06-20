@@ -1,26 +1,26 @@
 import { fetchWithRetry } from "../fetch-retry.js";
 import { roleModel, llmBaseUrl, llmApiKey } from "./models.js";
 
-// Model for short, single-shot completions: opts.model per call, else the
-// LLM_SHORT_MODEL env var, else the shared KIMI_MODEL. No built-in default —
-// bring your own (see lib/models.ts).
 const DEFAULT_MAX_TOKENS = 200;
 
 /**
- * Minimal LLM caller against the configured OpenAI-compatible endpoint, for
- * scenarios that need a single short text completion (e.g. summarizing one email).
- * Larger callers with tool calls and cost logging live elsewhere.
+ * Shared OpenAI-compatible chat completion: fetchWithRetry + auth headers + a
+ * 180s per-attempt timeout (completions, esp. extended-thinking ones, can run
+ * well past the 60s fetch default) + a `LLM <status>` throw on a non-ok response.
+ * Returns the raw message content — callers apply their own trimming. providerOrder
+ * (OpenRouter-style routing) and thinkingTokens are sent only when present; other
+ * OpenAI-compatible endpoints ignore the unknown fields.
  */
-export async function callLLMShort(
-  system: string,
-  user: string,
-  opts: { model?: string; maxTokens?: number } = {},
-): Promise<string> {
-  const model = opts.model ?? roleModel("LLM_SHORT_MODEL");
-  const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
-
+export async function chatCompletion(args: {
+  system: string;
+  user: string;
+  model: string;
+  maxTokens: number;
+  providerOrder?: string[];
+  thinkingTokens?: number;
+}): Promise<string> {
+  const { system, user, model, maxTokens, providerOrder, thinkingTokens } = args;
   const res = await fetchWithRetry(`${llmBaseUrl()}/chat/completions`, {
-    // LLM completions can run past the 60s fetch default; give them room.
     timeoutMs: 180_000,
     method: "POST",
     headers: {
@@ -29,6 +29,8 @@ export async function callLLMShort(
     },
     body: JSON.stringify({
       model,
+      ...(providerOrder?.length ? { provider: { order: providerOrder, allow_fallbacks: true } } : {}),
+      ...(thinkingTokens ? { reasoning: { max_tokens: thinkingTokens } } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -41,5 +43,24 @@ export async function callLLMShort(
     throw new Error(`LLM ${res.status}: ${body.slice(0, 200)}`);
   }
   const data = (await res.json()) as any;
-  return data?.choices?.[0]?.message?.content?.trim() ?? "";
+  return data?.choices?.[0]?.message?.content ?? "";
+}
+
+/**
+ * Minimal LLM caller for a single short text completion (e.g. summarizing one
+ * email). Larger callers with tool calls / cost logging live elsewhere. Trims the
+ * result; defaults to a short max_tokens and the LLM_SHORT_MODEL role.
+ */
+export async function callLLMShort(
+  system: string,
+  user: string,
+  opts: { model?: string; maxTokens?: number } = {},
+): Promise<string> {
+  const content = await chatCompletion({
+    system,
+    user,
+    model: opts.model ?? roleModel("LLM_SHORT_MODEL"),
+    maxTokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
+  });
+  return content.trim();
 }

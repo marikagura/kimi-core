@@ -57,7 +57,9 @@ export async function tagDepthIfNeeded(mem: {
     const topic = await prisma.topic.upsert({
       where: { slug: DEPTH_TOPIC_SLUG },
       update: {},
-      create: { slug: DEPTH_TOPIC_SLUG, name: DEPTH_TOPIC_SLUG, domain: "GENERAL" as any },
+      // The depth topic is generic self-disclosure, not a specific life-domain →
+      // the neutral GENERAL domain (added to the Domain enum in migration 2).
+      create: { slug: DEPTH_TOPIC_SLUG, name: DEPTH_TOPIC_SLUG, domain: "GENERAL" },
     });
     await prisma.memory.update({ where: { id: mem.id }, data: { topicId: topic.id } });
     console.log(`[depth-tag] fallback tagged depth: ${mem.title.slice(0, 40)}`);

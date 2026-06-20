@@ -17,6 +17,7 @@
 // ============================================================================
 
 import prisma from "../db.js";
+import { Prisma } from "@prisma/client";
 
 export interface WalkOpts {
   /** Starting node ids. */
@@ -113,27 +114,23 @@ export async function walkGraph(opts: WalkOpts): Promise<WalkNode[]> {
     for (const [curType, ids] of frontier) {
       if (ids.length === 0) continue;
 
+      // relationType is optional; splice it as a bound Prisma.sql fragment so the
+      // tagged-template parameter binding is preserved (never string-concatenated).
+      const relFilter = relationType
+        ? Prisma.sql`AND "relationType" = ${relationType}`
+        : Prisma.empty;
+
       // Forward: frontier nodes are the `from` side.
-      const fwd: any[] = relationType
-        ? await prisma.$queryRaw`
-            SELECT "toId" AS nid, "toType" AS ntype, "relationType" AS rel, confidence
-            FROM links
-            WHERE "fromId" = ANY(${ids}::text[])
-              AND "fromType" = ${curType}
-              AND confidence >= ${minConfidence}
-              AND "relationType" = ${relationType}
-            ORDER BY confidence DESC
-            LIMIT ${perHopLimit}
-          `
-        : await prisma.$queryRaw`
-            SELECT "toId" AS nid, "toType" AS ntype, "relationType" AS rel, confidence
-            FROM links
-            WHERE "fromId" = ANY(${ids}::text[])
-              AND "fromType" = ${curType}
-              AND confidence >= ${minConfidence}
-            ORDER BY confidence DESC
-            LIMIT ${perHopLimit}
-          `;
+      const fwd: any[] = await prisma.$queryRaw`
+        SELECT "toId" AS nid, "toType" AS ntype, "relationType" AS rel, confidence
+        FROM links
+        WHERE "fromId" = ANY(${ids}::text[])
+          AND "fromType" = ${curType}
+          AND confidence >= ${minConfidence}
+          ${relFilter}
+        ORDER BY confidence DESC
+        LIMIT ${perHopLimit}
+      `;
       for (const r of fwd) {
         edges.push({
           id: String(r.nid),
@@ -147,26 +144,16 @@ export async function walkGraph(opts: WalkOpts): Promise<WalkNode[]> {
       // undirected co_mentioned edges (stored once, fromId<toId) from either
       // end, and to follow any directed edge backwards.
       if (undirected) {
-        const rev: any[] = relationType
-          ? await prisma.$queryRaw`
-              SELECT "fromId" AS nid, "fromType" AS ntype, "relationType" AS rel, confidence
-              FROM links
-              WHERE "toId" = ANY(${ids}::text[])
-                AND "toType" = ${curType}
-                AND confidence >= ${minConfidence}
-                AND "relationType" = ${relationType}
-              ORDER BY confidence DESC
-              LIMIT ${perHopLimit}
-            `
-          : await prisma.$queryRaw`
-              SELECT "fromId" AS nid, "fromType" AS ntype, "relationType" AS rel, confidence
-              FROM links
-              WHERE "toId" = ANY(${ids}::text[])
-                AND "toType" = ${curType}
-                AND confidence >= ${minConfidence}
-              ORDER BY confidence DESC
-              LIMIT ${perHopLimit}
-            `;
+        const rev: any[] = await prisma.$queryRaw`
+          SELECT "fromId" AS nid, "fromType" AS ntype, "relationType" AS rel, confidence
+          FROM links
+          WHERE "toId" = ANY(${ids}::text[])
+            AND "toType" = ${curType}
+            AND confidence >= ${minConfidence}
+            ${relFilter}
+          ORDER BY confidence DESC
+          LIMIT ${perHopLimit}
+        `;
         for (const r of rev) {
           edges.push({
             id: String(r.nid),

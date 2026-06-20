@@ -16,11 +16,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import prisma from "./db.js";
 import { localDateTime, localDate } from "./time.js";
-import { embedText, embedAndStore, writeEmbedding } from "./lib/embed.js";
-import { findSimilarMemories } from "./lib/memory-similarity.js";
+import { indexNewMemory } from "./lib/memory-index.js";
 import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED } from "@kimi/context-core";
 import { scoreMemories } from "./lib/retrieval.js";
-import { sweepMemoryMentions } from "./lib/entity-mentions.js";
 import { walkGraph } from "./lib/graph-walk.js";
 import { deriveConcerns, deriveDrives, slugify } from "./lib/concern-derive.js";
 import { tagDepthIfNeeded } from "./lib/depth-judge.js";
@@ -28,6 +26,59 @@ import {
   isColdStartExcluded,
   publicSearchDrop,
 } from "./lib/reentry-filter.js";
+
+// Anchor body rendering, shared by reentry / reentry_delta. Softens by type +
+// importance: BOUNDARY → full body (the rule body is the rule; slicing breaks
+// it). CORE importance=5 → full body (identity signature / commitments /
+// relationship frame must not lose its tail). CORE importance<=4 + all
+// PREFERENCE → summary || slice(500) (analytical content; 500 chars keeps the
+// first half of the arc).
+function renderAnchor(m: any): string {
+  if (m.memoryType === "BOUNDARY") return m.content;
+  if (m.memoryType === "CORE" && m.importance === 5) return m.content;
+  const fallback = m.content.length > 500 ? m.content.slice(0, 500) + "..." : m.content;
+  return m.summary || fallback;
+}
+
+// Fields shared by every SELF_CONCERN → Memory(SELF) write (state_set + closeout).
+// The per-site fields (title/summary/content, sourceType MANUAL↔CHAT, concernKey,
+// authorModel) stay explicit at each call so provenance can't silently drift.
+export const SELF_CONCERN_DEFAULTS = {
+  memoryType: "STATE",
+  importance: 4,
+  experiencer: "SELF",
+  grounding: "SUBJECTIVE",
+  resolution: "OPEN",
+  valence: -0.3,
+  arousal: 0.4,
+} as const;
+
+type StateTypeName = "HEALTH" | "MOOD" | "PROJECT" | "STRESS" | "RELATIONSHIP" | "SCHEDULE" | "SELF_CONCERN";
+
+// (stateType + title) upsert, scoped to isActive rows: an existing active state of
+// the same title is updated; otherwise a new active row is created. The isActive
+// scope is load-bearing — a previously-closed same-title state must NOT be revived,
+// so this is not a plain prisma.upsert (no unique key backs it). Shared by state_set
+// and closeout; returns whether a row was created (vs updated) for the caller's message.
+export async function upsertActiveState(args: {
+  stateType: StateTypeName;
+  title: string;
+  summary: string;
+  content: string;
+  source?: string;
+}): Promise<{ created: boolean }> {
+  const { stateType, title, summary, content, source } = args;
+  const existing = await prisma.activeState.findFirst({
+    where: { stateType, title, isActive: true },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.activeState.update({ where: { id: existing.id }, data: { summary, content, source } });
+    return { created: false };
+  }
+  await prisma.activeState.create({ data: { stateType, title, summary, content, source } });
+  return { created: true };
+}
 
 // ----------------------------------------------------------------------------
 // Tool registration
@@ -163,26 +214,14 @@ export function registerAllTools(server: McpServer) {
       // Unsupported("vector(1536)") which can't be set via create({ data }),
       // so we UPDATE with raw SQL. Failure is tolerated — the nightly sweep
       // patches any null rows next run.
-      try {
-        await embedAndStore("memories", memory.id, `${title}\n${summary || content}`);
-      } catch (e: any) {
-        // Tolerated: the memory row is already saved; the nightly sweep re-embeds
-        // null rows. Don't fail the whole write on an embed / insert error.
-        console.warn(`[memory_write] embedding failed (sweep will retry): ${e?.message ?? e}`);
-      }
+      // Embedding + entity→memory mention edges (shared with closeout via
+      // indexNewMemory). Each arm swallows its own failure — the row is already
+      // saved; the nightly sweeps backfill anything that fails here.
+      await indexNewMemory(memory.id, `${title}\n${summary || content}`, { logTag: "memory_write" });
 
       // Depth fallback: qualifying memories with no topic get an async depth
       // judgment so an untagged depth memory still gets tagged. Fire-and-forget.
       void tagDepthIfNeeded({ id: memory.id, title, content, memoryType, importance, topicId: resolvedTopicId ?? null });
-
-      // Entity-mention sweep. Scans active entities (+ aliases) against this
-      // memory's text and writes any new (entity → memory) edges in `links`.
-      // Failure swallowed — a backfill job catches up later.
-      try {
-        await sweepMemoryMentions(memory.id);
-      } catch (e: any) {
-        console.warn("[memory_write] mention sweep failed:", e?.message ?? e);
-      }
 
       // Breadcrumb so an ambient loop can detect what a session just recorded.
       // Raw chat isn't in the event table; memory writes are the content
@@ -522,18 +561,12 @@ export function registerAllTools(server: McpServer) {
         const concernKey = `cc_${slugify(title)}`;
         await prisma.memory.create({
           data: {
-            memoryType: "STATE",
+            ...SELF_CONCERN_DEFAULTS,
             title,
             summary,
             content,
-            importance: 4,
             sourceType: "MANUAL",
-            experiencer: "SELF",
-            grounding: "SUBJECTIVE",
             concernKey,
-            resolution: "OPEN",
-            valence: -0.3,
-            arousal: 0.4,
           },
         });
         const d = await deriveConcerns();
@@ -547,19 +580,10 @@ export function registerAllTools(server: McpServer) {
       // different titles coexist. No blanket-deactivate of same-type old state
       // (the old singleton semantics would silently bump an earlier state).
       // Old state retires via state_close.
-      const existing = await prisma.activeState.findFirst({
-        where: { stateType, title, isActive: true },
-        select: { id: true },
-      });
-      if (existing) {
-        await prisma.activeState.update({
-          where: { id: existing.id },
-          data: { summary, content, source },
-        });
-        return { content: [{ type: "text", text: `State updated: [${stateType}] ${title}` }] };
-      }
-      const state = await prisma.activeState.create({ data: { stateType, title, summary, content, source } });
-      return { content: [{ type: "text", text: `State set: [${state.stateType}] ${state.title}` }] };
+      const { created } = await upsertActiveState({ stateType, title, summary, content, source });
+      return {
+        content: [{ type: "text", text: `${created ? "State set" : "State updated"}: [${stateType}] ${title}` }],
+      };
     },
   );
 
@@ -969,19 +993,6 @@ export function registerAllTools(server: McpServer) {
         : "No active topics.\n";
 
       ctx += "\n\n## Anchors & Rules (CORE / BOUNDARY / PREFERENCE)\n\n";
-      // anchors soften by type + importance. BOUNDARY: full body (the rule body
-      // is the rule, slicing breaks it). CORE importance=5: full body (identity
-      // signature / commitments / relationship frame must not lose its tail).
-      // CORE importance<=4 + all PREFERENCE: summary || slice(500) (analytical
-      // content; 500 chars keeps the first half of the arc).
-      const renderAnchor = (m: any) => {
-        if (m.memoryType === "BOUNDARY") return m.content;
-        if (m.memoryType === "CORE" && m.importance === 5) return m.content;
-        const fallback = m.content.length > 500
-          ? m.content.slice(0, 500) + "..."
-          : m.content;
-        return m.summary || fallback;
-      };
       ctx += anchors.length
         ? anchors
             .map(
@@ -1166,13 +1177,6 @@ export function registerAllTools(server: McpServer) {
         take: 40,
       });
 
-      const renderAnchor = (m: any) => {
-        if (m.memoryType === "BOUNDARY") return m.content;
-        if (m.memoryType === "CORE" && m.importance === 5) return m.content;
-        const fb = m.content.length > 500 ? m.content.slice(0, 500) + "..." : m.content;
-        return m.summary || fb;
-      };
-
       let ctx = `# Re-entry Delta\n\nSince ${localDateTime(since)} (anchor: ${anchorSrc}, tag=${chainTag})\n`;
       let any = false;
 
@@ -1355,15 +1359,10 @@ export function registerAllTools(server: McpServer) {
         },
       });
       // closeout previously bypassed memory_write's post-write pipeline — the
-      // embedding waited for the nightly sweep and entity→memory edges were
-      // never built. The episode is a heavy retrieval target, so build both
-      // here; failure swallowed, the sweep is the safety net.
-      try {
-        await embedAndStore("memories", episode.id, `${episode.title}\n${episodeSummary.slice(0, 300)}`);
-        await sweepMemoryMentions(episode.id);
-      } catch (e: any) {
-        console.warn("[closeout] episode embed/mention failed:", e?.message ?? e);
-      }
+      // embedding waited for the nightly sweep and entity→memory edges were never
+      // built. The episode is a heavy retrieval target, so index it here too via
+      // the shared path (embedding + mention edges; the sweeps are the safety net).
+      await indexNewMemory(episode.id, `${episode.title}\n${episodeSummary.slice(0, 300)}`, { logTag: "closeout" });
       results.push(`Episode saved: "${episode.title}"`);
 
       if (selfScore) {
@@ -1439,18 +1438,12 @@ export function registerAllTools(server: McpServer) {
           if (state.stateType === "SELF_CONCERN") {
             await prisma.memory.create({
               data: {
-                memoryType: "STATE",
+                ...SELF_CONCERN_DEFAULTS,
                 title: state.title,
                 summary: state.summary,
                 content: state.content,
-                importance: 4,
                 sourceType: "CHAT",
-                experiencer: "SELF",
-                grounding: "SUBJECTIVE",
                 concernKey: `cc_${slugify(state.title)}`,
-                resolution: "OPEN",
-                valence: -0.3,
-                arousal: 0.4,
                 authorModel,
               },
             });
@@ -1458,20 +1451,7 @@ export function registerAllTools(server: McpServer) {
             continue;
           }
           // Same as state_set: (stateType+title) upsert, no singleton replacement.
-          const existingState = await prisma.activeState.findFirst({
-            where: { stateType: state.stateType, title: state.title, isActive: true },
-            select: { id: true },
-          });
-          if (existingState) {
-            await prisma.activeState.update({
-              where: { id: existingState.id },
-              data: { summary: state.summary, content: state.content, source: "closeout" },
-            });
-          } else {
-            await prisma.activeState.create({
-              data: { stateType: state.stateType, title: state.title, summary: state.summary, content: state.content, source: "closeout" },
-            });
-          }
+          await upsertActiveState({ stateType: state.stateType, title: state.title, summary: state.summary, content: state.content, source: "closeout" });
         }
         if (derivedAfterCloseout) { await deriveConcerns(); await deriveDrives(); }
         results.push(`${stateUpdates.length} states updated`);
@@ -1511,35 +1491,17 @@ export function registerAllTools(server: McpServer) {
         results.push(`${keyObservations.length} observations upserted`);
       }
 
-      // Memory V3 — build relation edges for new keyMemories
+      // Memory V3 — full index for the new keyMemories: embedding + entity→memory
+      // mention edges + memory→memory similar edges. The episode / memory_write
+      // paths skip the similar edges; keyMemories opt in via withSimilarEdges.
       if (savedMemoryIds.length) {
         let edgesCreated = 0;
         for (const saved of savedMemoryIds) {
-          // entity→memory edges: memory_write builds them; closeout used to skip them.
-          try { await sweepMemoryMentions(saved.id); } catch (e: any) {
-            console.warn("[closeout] mention sweep failed:", e?.message ?? e);
-          }
-          const searchText = `${saved.title} ${saved.summary}`;
-          const emb = await embedText(searchText);
-          if (!emb) continue;
-          // Write the embedding into the row (else it waits for the nightly sweep),
-          // then build similar-edges via the same cosine query the sweep uses.
-          await writeEmbedding("memories", saved.id, emb);
-          const sims = await findSimilarMemories(emb, saved.id);
-          for (const s of sims) {
-            await prisma.link.create({
-              data: {
-                fromType: "memory",
-                fromId: saved.id,
-                toType: "memory",
-                toId: s.id,
-                relationType: "similar",
-                confidence: s.confidence,
-                note: `auto-linked at closeout (cosine sim ${s.confidence.toFixed(2)})`,
-              },
-            });
-            edgesCreated++;
-          }
+          const r = await indexNewMemory(saved.id, `${saved.title} ${saved.summary}`, {
+            withSimilarEdges: true,
+            logTag: "closeout",
+          });
+          edgesCreated += r.edgesCreated;
         }
         if (edgesCreated > 0) results.push(`${edgesCreated} relation edges created`);
       }

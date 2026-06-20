@@ -394,6 +394,7 @@ enum Domain {
   LOVE
   SYSTEM
   RESEARCH
+  GENERAL
 }
 
 enum DecisionStatus {

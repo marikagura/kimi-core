@@ -30,6 +30,7 @@
 // ============================================================================
 
 import { fetchWithRetry } from "../fetch-retry.js";
+import { errMessage } from "./err.js";
 
 type Provider = "local" | "cohere" | "jina" | "voyage" | "none";
 
@@ -84,15 +85,15 @@ async function rerankLocal(query: string, docs: string[]): Promise<number[] | nu
       console.error(`[reranker] local ${res.status}: ${body.slice(0, 200)}`);
       return null;
     }
-    const data: any = await res.json();
+    const data = (await res.json()) as { scores?: unknown };
     const scores = data?.scores;
     if (!Array.isArray(scores) || scores.length !== docs.length) {
       console.error("[reranker] local unexpected response shape");
       return null;
     }
-    return scores.map((s: any) => clamp01(Number(s)));
-  } catch (err: any) {
-    console.error("[reranker] local failed:", err?.message || err);
+    return scores.map((s: unknown) => clamp01(Number(s)));
+  } catch (err: unknown) {
+    console.error("[reranker] local failed:", errMessage(err));
     return null;
   }
 }
@@ -136,18 +137,18 @@ export async function rerankViaApi(
       console.error(`[reranker] ${cfg.name} ${res.status}: ${body.slice(0, 200)}`);
       return null;
     }
-    const data: any = await res.json();
+    const data = (await res.json()) as Record<string, unknown>;
     const results = data?.[cfg.resultsPath];
     if (!Array.isArray(results)) {
       console.error(`[reranker] ${cfg.name} unexpected response shape`);
       return null;
     }
     return scatterByIndex(
-      results.map((r: any) => ({ index: r.index, score: Number(r.relevance_score) })),
+      results.map((r: { index: number; relevance_score: number }) => ({ index: r.index, score: Number(r.relevance_score) })),
       docs.length,
     );
-  } catch (err: any) {
-    console.error(`[reranker] ${cfg.name} failed:`, err?.message || err);
+  } catch (err: unknown) {
+    console.error(`[reranker] ${cfg.name} failed:`, errMessage(err));
     return null;
   }
 }

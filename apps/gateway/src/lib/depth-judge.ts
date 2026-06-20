@@ -13,6 +13,7 @@ import prisma from "../db.js";
 import { callLLMShort } from "./llm.js";
 import { roleModel } from "./models.js";
 import { firstJsonObject } from "./json-extract.js";
+import { errMessage } from "./err.js";
 
 // Topic slug used to mark depth memories across all write paths. Tunable. Exported
 // as the single definition — concern-derive's bonding-dim backing imports it.
@@ -63,7 +64,7 @@ export async function tagDepthIfNeeded(mem: {
     });
     await prisma.memory.update({ where: { id: mem.id }, data: { topicId: topic.id } });
     console.log(`[depth-tag] fallback tagged depth: ${mem.title.slice(0, 40)}`);
-  } catch (e: any) {
-    console.warn(`[depth-tag] fallback skipped (does not affect main write): ${e?.message ?? e}`);
+  } catch (e: unknown) {
+    console.warn(`[depth-tag] fallback skipped (does not affect main write): ${errMessage(e)}`);
   }
 }

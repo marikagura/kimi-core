@@ -4,6 +4,7 @@
 
 import prisma from "../db.js";
 import { roleModel } from "./models.js";
+import { errMessage } from "./err.js";
 
 // Write the per-session self-score memory (SELF_SCORE) from the digest's v/a.
 // Dedup by the date+time title so a re-run doesn't double-write. RESOLVED — a
@@ -45,8 +46,8 @@ export async function writeSessionScore(args: {
       },
     });
     return { written: true };
-  } catch (err: any) {
-    console.error(`[dialogue_digest] ${args.dateStr} self-score write failed:`, err.message);
+  } catch (err: unknown) {
+    console.error(`[dialogue_digest] ${args.dateStr} self-score write failed:`, errMessage(err));
     return { written: false };
   }
 }

@@ -11,14 +11,23 @@
 // prices only skew the estUsd column — they do not affect any LLM behavior.
 import prisma from "../db.js";
 import { numEnv } from "./env.js";
+import { errMessage } from "./err.js";
 
 const PRICE_CACHE_READ = numEnv("PRICE_CACHE_READ_PER_M", 0.5);
 const PRICE_CACHE_WRITE = numEnv("PRICE_CACHE_WRITE_PER_M", 6.25);
 const PRICE_FRESH_INPUT = numEnv("PRICE_INPUT_PER_M", 5);
 const PRICE_OUTPUT = numEnv("PRICE_OUTPUT_PER_M", 25);
 
-export async function logCost(kind: string, usage: any): Promise<void> {
-  const u = usage ?? {};
+// Minimal shape of the OpenAI / OpenRouter `usage` object this reads (all optional).
+type Usage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  completion_tokens_details?: { reasoning_tokens?: number };
+};
+
+export async function logCost(kind: string, usage: unknown): Promise<void> {
+  const u = (usage ?? {}) as Usage;
   const ptd = u.prompt_tokens_details ?? {};
   const ctd = u.completion_tokens_details ?? {};
   const cacheRead = ptd.cached_tokens ?? 0;
@@ -55,7 +64,7 @@ export async function logCost(kind: string, usage: any): Promise<void> {
         }),
       },
     });
-  } catch (err: any) {
-    console.error("[cost-log] DB write failed:", err?.message || err);
+  } catch (err: unknown) {
+    console.error("[cost-log] DB write failed:", errMessage(err));
   }
 }

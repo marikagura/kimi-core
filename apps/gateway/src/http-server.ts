@@ -5,6 +5,7 @@ import cors from "cors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerAllTools } from "./tools.js";
+import { errMessage } from "./lib/err.js";
 
 const app = express();
 
@@ -75,8 +76,8 @@ app.post("/mcp", express.json(), async (req, res) => {
     res.on("close", () => { transport.close(); server.close(); });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
-  } catch (err: any) {
-    console.error("/mcp error:", err?.message || err);
+  } catch (err: unknown) {
+    console.error("/mcp error:", errMessage(err));
     if (!res.headersSent) {
       res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null });
     }

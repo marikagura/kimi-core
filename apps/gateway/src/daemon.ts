@@ -9,6 +9,7 @@ import { dispatchAction, ActionType, type AutonomyMode } from "./lib/agency.js";
 import { getNotifier, getSearchProvider } from "./lib/providers.js";
 import { modelFor } from "./lib/models.js";
 import { firstJsonObject } from "./lib/json-extract.js";
+import { errMessage } from "./lib/err.js";
 
 // ============================================================================
 // wake daemon — a timer-driven, read-only agent loop.
@@ -131,8 +132,8 @@ async function marker(source: string, value: Record<string, unknown>) {
     await prisma.event.create({
       data: { eventType: "SYSTEM", source, value: JSON.stringify(value) },
     });
-  } catch (err: any) {
-    console.error(`[daemon] marker(${source}) failed:`, err?.message || err);
+  } catch (err: unknown) {
+    console.error(`[daemon] marker(${source}) failed:`, errMessage(err));
   }
 }
 
@@ -341,9 +342,9 @@ async function wake(force = false) {
     }
 
     console.log(`[${ts}] action=${parsed.action} mono="${(parsed.monologue || "").slice(0, 40)}"`);
-  } catch (err: any) {
-    console.error(`[${ts}] wake error:`, err?.message || err);
-    await marker("daemon_error", { ts: localDateTime(now), error: String(err?.message || err) });
+  } catch (err: unknown) {
+    console.error(`[${ts}] wake error:`, errMessage(err));
+    await marker("daemon_error", { ts: localDateTime(now), error: errMessage(err) });
   }
 }
 

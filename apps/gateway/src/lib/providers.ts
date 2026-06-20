@@ -66,20 +66,23 @@ export function getNotifier(): Notifier {
 // and map each item's fields (SEARCH_FIELD_TITLE / _URL / _SNIPPET) into a
 // SearchResult. Configurable so it adapts to most JSON search APIs (Brave /
 // Tavily / SerpAPI / your own) with no code change. Pure — unit-tested.
-export function mapResults(json: any): SearchResult[] {
+export function mapResults(json: unknown): SearchResult[] {
   const path = (process.env.SEARCH_RESULTS_PATH || "results").split(".");
-  let arr: any = json;
-  for (const k of path) arr = arr?.[k];
+  let arr: unknown = json;
+  for (const k of path) arr = (arr as Record<string, unknown> | null | undefined)?.[k];
   if (!Array.isArray(arr)) return [];
   const tF = process.env.SEARCH_FIELD_TITLE || "title";
   const uF = process.env.SEARCH_FIELD_URL || "url";
   const sF = process.env.SEARCH_FIELD_SNIPPET || "snippet";
   return arr
-    .map((r: any): SearchResult => ({
-      title: String(r?.[tF] ?? ""),
-      url: r?.[uF] ? String(r[uF]) : undefined,
-      snippet: String(r?.[sF] ?? ""),
-    }))
+    .map((r: unknown): SearchResult => {
+      const o = r as Record<string, unknown>;
+      return {
+        title: String(o?.[tF] ?? ""),
+        url: o?.[uF] ? String(o[uF]) : undefined,
+        snippet: String(o?.[sF] ?? ""),
+      };
+    })
     .filter((r) => r.title || r.snippet);
 }
 

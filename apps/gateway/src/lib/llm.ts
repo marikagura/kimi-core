@@ -42,7 +42,7 @@ export async function chatCompletion(args: {
     const body = await res.text().catch(() => "");
     throw new Error(`LLM ${res.status}: ${body.slice(0, 200)}`);
   }
-  const data = (await res.json()) as any;
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
   return data?.choices?.[0]?.message?.content ?? "";
 }
 

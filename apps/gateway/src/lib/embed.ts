@@ -10,6 +10,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "../db.js";
 import { fetchWithRetry } from "../fetch-retry.js";
 import { embedModelOrNull, embedBaseUrlOrNull, embedApiKeyOrNull } from "./models.js";
+import { errMessage } from "./err.js";
 
 // The embedding dimension the DB vector columns are declared with (vector(1536) in
 // schema.prisma + the 0_init migration). EMBED_MODEL MUST produce this many dims;
@@ -43,7 +44,7 @@ export async function embedText(text: string): Promise<number[] | null> {
       console.error(`[embed] openai ${res.status}: ${body.slice(0, 200)}`);
       return null;
     }
-    const data: any = await res.json();
+    const data = (await res.json()) as { data?: Array<{ embedding?: unknown }> };
     const emb = data?.data?.[0]?.embedding;
     if (!Array.isArray(emb)) {
       console.error("[embed] unexpected response shape");
@@ -56,8 +57,8 @@ export async function embedText(text: string): Promise<number[] | null> {
       return null;
     }
     return emb;
-  } catch (err: any) {
-    console.error("[embed] failed:", err?.message || err);
+  } catch (err: unknown) {
+    console.error("[embed] failed:", errMessage(err));
     return null;
   }
 }

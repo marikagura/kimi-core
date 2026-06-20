@@ -15,6 +15,7 @@ import { chatCompletion } from "./lib/llm.js";
 import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
 import { firstJsonObject } from "./lib/json-extract.js";
 import { parseDigest, parseSessionScore, type Digest } from "./lib/llm-schemas.js";
+import { errMessage } from "./lib/err.js";
 
 // No built-in model — every model is the deployer's own (KIMI_MODEL, with optional
 // per-role overrides INTEL_MODEL / INTEL_DIGEST_MODEL / INTEL_SWEEP_MODEL /
@@ -100,7 +101,7 @@ async function getExistingMemoryTitles(): Promise<string> {
     take: 200,
     orderBy: { importance: "desc" },
   });
-  return memories.map((m: any) => m.title).join("\n- ");
+  return memories.map((m) => m.title).join("\n- ");
 }
 
 async function extractFromChat(since: Date, existingTitles: string) {
@@ -111,7 +112,7 @@ async function extractFromChat(since: Date, existingTitles: string) {
   });
   if (chats.length < 4) return 0;
 
-  const conversation = chats.map((c: any) => {
+  const conversation = chats.map((c) => {
     const p = parseChatEvent(c.value);
     return p ? `[${p.role}] ${p.text}` : "";
   }).filter(Boolean).join("\n");
@@ -253,9 +254,10 @@ async function scanSelfEmotion(): Promise<{ created: number; updated: number; de
     } else {
       swept = "0 sweepable";
     }
-  } catch (e: any) {
-    console.error("self-sweep err:", e.message);
-    swept = `ERR ${e.message}`;
+  } catch (e: unknown) {
+    const m = errMessage(e);
+    console.error("self-sweep err:", m);
+    swept = `ERR ${m}`;
   }
 
   const d = await deriveConcerns();
@@ -392,8 +394,8 @@ Output JSON (JSON only, no markdown fence):
       for (attempts = 1; attempts <= 2; attempts++) {
         try {
           raw = await callLLM(systemPrompt, prompt, 1500, roleModel("INTEL_DIGEST_MODEL"));
-        } catch (err: any) {
-          console.warn(`[dialogue_digest] ${dateStr} callLLM attempt ${attempts} threw: ${err?.message ?? err}`);
+        } catch (err: unknown) {
+          console.warn(`[dialogue_digest] ${dateStr} callLLM attempt ${attempts} threw: ${errMessage(err)}`);
           raw = "";
         }
         p = parseDigest(raw);
@@ -451,8 +453,8 @@ Output JSON (JSON only, no markdown fence):
       });
       await embedAndStore("memories", digestMem.id, `${titlePrefix}\n${dSummary}`);
       created++;
-    } catch (err: any) {
-      console.error(`[dialogue_digest] ${dateStr} failed:`, err.message);
+    } catch (err: unknown) {
+      console.error(`[dialogue_digest] ${dateStr} failed:`, errMessage(err));
       failed++;
     }
 
@@ -505,7 +507,7 @@ async function runAll() {
     try {
       const n = await extractFromChat(since, existingTitles);
       summary.push(`chat: ${n} candidates`);
-    } catch (e: any) { console.error("chat err:", e.message); summary.push(`chat: ERR ${e.message}`); }
+    } catch (e: unknown) { const m = errMessage(e); console.error("chat err:", m); summary.push(`chat: ERR ${m}`); }
   }
   // probe must run before scanSelfEmotion(derive): derive projects SELF memory
   // (incl. sleep_debt) into ActiveState. Running the probe afterward would make
@@ -514,12 +516,12 @@ async function runAll() {
   try {
     const r = await checkDataConcern();
     summary.push(`data_concern: ${r.concerned ? "ACTIVE" : "ok"} avg=${r.avgValue.toFixed(1)} short=${r.shortWindows} windows=${r.windows}`);
-  } catch (e: any) { console.error("sleep_concern err:", e.message); summary.push(`sleep_concern: ERR ${e.message}`); }
+  } catch (e: unknown) { const m = errMessage(e); console.error("sleep_concern err:", m); summary.push(`sleep_concern: ERR ${m}`); }
 
   try {
     const r = await scanSelfEmotion();
     summary.push(`self_emotion: +${r.created} created, ${r.updated} updated, ${r.deactivated} deactivated; sweep: ${r.swept}`);
-  } catch (e: any) { console.error("self_emotion err:", e.message); summary.push(`self_emotion: ERR ${e.message}`); }
+  } catch (e: unknown) { const m = errMessage(e); console.error("self_emotion err:", m); summary.push(`self_emotion: ERR ${m}`); }
 
   // Dead-dimension probe: a full-dimension grounding roster goes into the summary
   // for the ops dashboard. Isolated in lib/dim-health.ts and wrapped in try so a
@@ -527,14 +529,14 @@ async function runAll() {
   try {
     const r = await checkDimHealth();
     summary.push(`dim_health: ${r.roster.map((d) => `${d.key}=${d.grounding.toFixed(2)}${d.dark ? "(!)" : ""}`).join(" ")}`);
-  } catch (e: any) { console.error("dim_health err:", e.message); summary.push(`dim_health: ERR ${e.message}`); }
+  } catch (e: unknown) { const m = errMessage(e); console.error("dim_health err:", m); summary.push(`dim_health: ERR ${m}`); }
   // dialogue_digest runs on its own hourly tick (digestTick, below): a session is
   // digested once it has been idle for GAP_H. It is not run here to avoid a
   // concurrent dedup collision with the tick. This is the only digest path.
   try {
     const r = await sweepNullEmbeddings();
     summary.push(`embedding_sweep: ${r.patched}/${r.attempted} patched`);
-  } catch (e: any) { console.error("embedding_sweep err:", e.message); summary.push(`embedding_sweep: ERR ${e.message}`); }
+  } catch (e: unknown) { const m = errMessage(e); console.error("embedding_sweep err:", m); summary.push(`embedding_sweep: ERR ${m}`); }
 
   // Auto-expire PendingItem after 7 days: candidates nobody resolves accumulate
   // forever. Items still OPEN after 7 days → EXPIRED. Still visible in backstage,
@@ -549,9 +551,10 @@ async function runAll() {
       data: { status: "EXPIRED", resolvedAt: new Date() },
     });
     summary.push(`pending_expire: ${expired.count} expired (>7d OPEN)`);
-  } catch (e: any) {
-    console.error("pending_expire err:", e.message);
-    summary.push(`pending_expire: ERR ${e.message}`);
+  } catch (e: unknown) {
+    const m = errMessage(e);
+    console.error("pending_expire err:", m);
+    summary.push(`pending_expire: ERR ${m}`);
   }
 
   // intel push is disabled. High-priority pending items stay in the DB (visible
@@ -578,7 +581,7 @@ const DAILY_CRON = process.env.INTEL_DAILY_CRON || "0 9 * * *";
 const CRON_TZ = process.env.KIMI_CRON_TZ ?? DEFAULT_TZ;
 // Wrap so a rejected run (e.g. DB unavailable at cold start) is a logged error, not
 // an unhandled rejection that crashes the long-lived intel process.
-const safeRunAll = () => runAll().catch((e: any) => console.error("[intel] runAll error:", e?.message || e));
+const safeRunAll = () => runAll().catch((e: unknown) => console.error("[intel] runAll error:", errMessage(e)));
 cron.schedule(DAILY_CRON, safeRunAll, { timezone: CRON_TZ });
 safeRunAll();
 
@@ -596,10 +599,10 @@ async function digestTick() {
     if (r.created > 0 || r.failed > 0) {
       console.log(`[digest tick] +${r.created} created, ${r.skipped} skipped, ${r.failed} failed`);
     }
-  } catch (e: any) { console.error("[digest tick] err:", e.message); }
+  } catch (e: unknown) { console.error("[digest tick] err:", errMessage(e)); }
   finally { digestRunning = false; }
 }
-const safeDigestTick = () => digestTick().catch((e: any) => console.error("[intel] digestTick error:", e?.message || e));
+const safeDigestTick = () => digestTick().catch((e: unknown) => console.error("[intel] digestTick error:", errMessage(e)));
 cron.schedule(DIGEST_CRON, safeDigestTick, { timezone: CRON_TZ });
 safeDigestTick();
 

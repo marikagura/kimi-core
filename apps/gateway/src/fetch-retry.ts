@@ -25,13 +25,17 @@ function retryAfterMs(res: Response): number | null {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const short = (url: string) => url.slice(0, 60);
 
+// RequestInit plus an optional per-attempt timeout. Every call site passes a plain
+// RequestInit shape; only the LLM caller sets timeoutMs.
+type FetchRetryInit = RequestInit & { timeoutMs?: number };
+
 export async function fetchWithRetry(
   url: string,
-  opts: any = {},
+  opts: FetchRetryInit = {},
   maxAttempts = 3,
 ): Promise<Response> {
   const timeoutMs = opts.timeoutMs ?? 60_000;
-  let lastErr: any;
+  let lastErr: unknown;
   for (let i = 0; i < maxAttempts; i++) {
     const last = i === maxAttempts - 1;
     // Per-attempt timeout. Combine with a caller-supplied signal when AbortSignal.any
@@ -53,10 +57,13 @@ export async function fetchWithRetry(
         continue;
       }
       return res;
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastErr = err;
-      const code = err?.cause?.code;
-      const name = err?.name;
+      // node's fetch throws a TypeError carrying a .cause (errno like ETIMEDOUT) or a
+      // DOMException (AbortError / TimeoutError) — read both shapes off a narrowed view.
+      const e = err as { cause?: { code?: string }; name?: string };
+      const code = e.cause?.code;
+      const name = e.name;
       const transient =
         code === "ETIMEDOUT" ||
         code === "ECONNRESET" ||

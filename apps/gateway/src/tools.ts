@@ -16,11 +16,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import prisma from "./db.js";
 import { localDateTime, localDate } from "./time.js";
-import { embedText, embedAndStore, writeEmbedding } from "./lib/embed.js";
-import { findSimilarMemories } from "./lib/memory-similarity.js";
+import { indexNewMemory } from "./lib/memory-index.js";
 import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED } from "@kimi/context-core";
 import { scoreMemories } from "./lib/retrieval.js";
-import { sweepMemoryMentions } from "./lib/entity-mentions.js";
 import { walkGraph } from "./lib/graph-walk.js";
 import { deriveConcerns, deriveDrives, slugify } from "./lib/concern-derive.js";
 import { tagDepthIfNeeded } from "./lib/depth-judge.js";
@@ -216,26 +214,14 @@ export function registerAllTools(server: McpServer) {
       // Unsupported("vector(1536)") which can't be set via create({ data }),
       // so we UPDATE with raw SQL. Failure is tolerated — the nightly sweep
       // patches any null rows next run.
-      try {
-        await embedAndStore("memories", memory.id, `${title}\n${summary || content}`);
-      } catch (e: any) {
-        // Tolerated: the memory row is already saved; the nightly sweep re-embeds
-        // null rows. Don't fail the whole write on an embed / insert error.
-        console.warn(`[memory_write] embedding failed (sweep will retry): ${e?.message ?? e}`);
-      }
+      // Embedding + entity→memory mention edges (shared with closeout via
+      // indexNewMemory). Each arm swallows its own failure — the row is already
+      // saved; the nightly sweeps backfill anything that fails here.
+      await indexNewMemory(memory.id, `${title}\n${summary || content}`, { logTag: "memory_write" });
 
       // Depth fallback: qualifying memories with no topic get an async depth
       // judgment so an untagged depth memory still gets tagged. Fire-and-forget.
       void tagDepthIfNeeded({ id: memory.id, title, content, memoryType, importance, topicId: resolvedTopicId ?? null });
-
-      // Entity-mention sweep. Scans active entities (+ aliases) against this
-      // memory's text and writes any new (entity → memory) edges in `links`.
-      // Failure swallowed — a backfill job catches up later.
-      try {
-        await sweepMemoryMentions(memory.id);
-      } catch (e: any) {
-        console.warn("[memory_write] mention sweep failed:", e?.message ?? e);
-      }
 
       // Breadcrumb so an ambient loop can detect what a session just recorded.
       // Raw chat isn't in the event table; memory writes are the content
@@ -1373,15 +1359,10 @@ export function registerAllTools(server: McpServer) {
         },
       });
       // closeout previously bypassed memory_write's post-write pipeline — the
-      // embedding waited for the nightly sweep and entity→memory edges were
-      // never built. The episode is a heavy retrieval target, so build both
-      // here; failure swallowed, the sweep is the safety net.
-      try {
-        await embedAndStore("memories", episode.id, `${episode.title}\n${episodeSummary.slice(0, 300)}`);
-        await sweepMemoryMentions(episode.id);
-      } catch (e: any) {
-        console.warn("[closeout] episode embed/mention failed:", e?.message ?? e);
-      }
+      // embedding waited for the nightly sweep and entity→memory edges were never
+      // built. The episode is a heavy retrieval target, so index it here too via
+      // the shared path (embedding + mention edges; the sweeps are the safety net).
+      await indexNewMemory(episode.id, `${episode.title}\n${episodeSummary.slice(0, 300)}`, { logTag: "closeout" });
       results.push(`Episode saved: "${episode.title}"`);
 
       if (selfScore) {
@@ -1510,35 +1491,17 @@ export function registerAllTools(server: McpServer) {
         results.push(`${keyObservations.length} observations upserted`);
       }
 
-      // Memory V3 — build relation edges for new keyMemories
+      // Memory V3 — full index for the new keyMemories: embedding + entity→memory
+      // mention edges + memory→memory similar edges. The episode / memory_write
+      // paths skip the similar edges; keyMemories opt in via withSimilarEdges.
       if (savedMemoryIds.length) {
         let edgesCreated = 0;
         for (const saved of savedMemoryIds) {
-          // entity→memory edges: memory_write builds them; closeout used to skip them.
-          try { await sweepMemoryMentions(saved.id); } catch (e: any) {
-            console.warn("[closeout] mention sweep failed:", e?.message ?? e);
-          }
-          const searchText = `${saved.title} ${saved.summary}`;
-          const emb = await embedText(searchText);
-          if (!emb) continue;
-          // Write the embedding into the row (else it waits for the nightly sweep),
-          // then build similar-edges via the same cosine query the sweep uses.
-          await writeEmbedding("memories", saved.id, emb);
-          const sims = await findSimilarMemories(emb, saved.id);
-          for (const s of sims) {
-            await prisma.link.create({
-              data: {
-                fromType: "memory",
-                fromId: saved.id,
-                toType: "memory",
-                toId: s.id,
-                relationType: "similar",
-                confidence: s.confidence,
-                note: `auto-linked at closeout (cosine sim ${s.confidence.toFixed(2)})`,
-              },
-            });
-            edgesCreated++;
-          }
+          const r = await indexNewMemory(saved.id, `${saved.title} ${saved.summary}`, {
+            withSimilarEdges: true,
+            logTag: "closeout",
+          });
+          edgesCreated += r.edgesCreated;
         }
         if (edgesCreated > 0) results.push(`${edgesCreated} relation edges created`);
       }

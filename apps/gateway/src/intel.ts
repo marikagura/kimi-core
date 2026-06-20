@@ -3,9 +3,10 @@ import { numEnv } from "./lib/env.js";
 import { groupByIdleGap } from "./lib/session-group.js";
 import cron from "node-cron";
 import prisma from "./db.js";
-import { Prisma } from "@prisma/client";
 import { localDate, localDateTime, DEFAULT_TZ } from "./time.js";
-import { embedAndStore, STALE_EMBEDDING_WHERE, type EmbeddableTable } from "./lib/embed.js";
+import { embedAndStore } from "./lib/embed.js";
+import { sweepNullEmbeddings } from "./lib/embedding-sweep.js";
+import { writeSessionScore } from "./lib/session-score.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
@@ -282,52 +283,6 @@ async function scanSelfEmotion(): Promise<{ created: number; updated: number; de
 const TOPIC_JUDGE_CRITERION = process.env.INTEL_TOPIC_CRITERION || "";
 const TOPIC_SLUG = process.env.INTEL_TOPIC_SLUG || "";
 
-// Write the per-session self-score memory (SELF_SCORE) from the digest's v/a.
-// Dedup by the date+time title so a re-run doesn't double-write. RESOLVED — a
-// session score is a snapshot, not an open concern. Tolerates its own write
-// failure (logs, returns written:false) so a score error never fails the digest.
-export async function writeSessionScore(args: {
-  dateStr: string;
-  startHHMM: string;
-  valence: number;
-  arousal: number | null;
-  note: string;
-  firstAt: Date;
-  lastAt: Date;
-}): Promise<{ written: boolean }> {
-  const scoreTitle = `chat-score ${args.dateStr} ${args.startHHMM}`;
-  const exists = await prisma.memory.findFirst({
-    where: { memoryType: "SELF_SCORE", title: scoreTitle },
-    select: { id: true },
-  });
-  if (exists) return { written: false };
-  const body = args.note || `${args.dateStr} session`;
-  try {
-    await prisma.memory.create({
-      data: {
-        memoryType: "SELF_SCORE",
-        title: scoreTitle,
-        summary: body,
-        content: body,
-        importance: 3,
-        experiencer: "SELF",
-        resolution: "RESOLVED",
-        valence: args.valence,
-        arousal: args.arousal,
-        sourceType: "CHAT",
-        authorModel: roleModel("INTEL_SCORE_AUTHOR_MODEL"),
-        digestTimeStart: args.firstAt,
-        digestTimeEnd: args.lastAt,
-        validFrom: args.lastAt,
-      },
-    });
-    return { written: true };
-  } catch (err: any) {
-    console.error(`[dialogue_digest] ${args.dateStr} self-score write failed:`, err.message);
-    return { written: false };
-  }
-}
-
 // Dialogue digest layer — scans CHAT events in a recent window, groups them into
 // sessions by an idle gap, and compresses each session into one EPISODE memory.
 // dedup via title prefix (date-based); the first run backfills recent history.
@@ -524,58 +479,6 @@ Output JSON (JSON only, no markdown fence):
   }
 
   return { created, skipped, failed };
-}
-
-// Sweep rows whose embedding is missing or stale (STALE_EMBEDDING_WHERE: NULL —
-// newly written / cleared — or content edited after creation with the embedding
-// not following) and re-embed them. Covers all three embeddable tables; memories
-// was inline here while observations + core_profile lived in a one-off migrate
-// script. Per-run limits are cost bounds (memories carries the most churn → 500).
-//
-// observations note: upsert is frequent (unique key); a raw UPDATE does not bump
-// Prisma's @updatedAt, so this sweep never pushes updatedAt forward and will not
-// self-trigger on a row it just embedded.
-export const SWEEP_TABLES: ReadonlyArray<{
-  table: EmbeddableTable;
-  limit: number;
-  // memories embeds title + (summary || content); the other two have no summary
-  // column, so they select + embed title + content only.
-  needsSummary: boolean;
-  embedInput: (row: any) => string;
-}> = [
-  { table: "memories", limit: 500, needsSummary: true, embedInput: (r) => `${r.title}\n${r.summary || r.content}` },
-  { table: "observations", limit: 100, needsSummary: false, embedInput: (r) => `${r.title}\n${r.content}` },
-  { table: "core_profile", limit: 100, needsSummary: false, embedInput: (r) => `${r.title}\n${r.content}` },
-];
-
-// Re-embed one table's stale rows. The column list is a fixed pair (the boolean
-// picks whether `summary` is included) and the table name comes from the typed
-// config above — never free user text, so the Prisma.raw splices carry no
-// injection surface. Returns (attempted, patched) for that table.
-export async function sweepTable(cfg: (typeof SWEEP_TABLES)[number]): Promise<{ patched: number; attempted: number }> {
-  const cols = cfg.needsSummary
-    ? Prisma.raw("id, title, content, summary")
-    : Prisma.raw("id, title, content");
-  const rows: any[] = await prisma.$queryRaw(Prisma.sql`
-    SELECT ${cols} FROM ${Prisma.raw(cfg.table)}
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
-    LIMIT ${cfg.limit}
-  `);
-  let patched = 0;
-  for (const row of rows) {
-    if (await embedAndStore(cfg.table, row.id, cfg.embedInput(row))) patched++;
-  }
-  return { patched, attempted: rows.length };
-}
-
-async function sweepNullEmbeddings(): Promise<{ patched: number; attempted: number }> {
-  let patched = 0, attempted = 0;
-  for (const cfg of SWEEP_TABLES) {
-    const r = await sweepTable(cfg);
-    patched += r.patched;
-    attempted += r.attempted;
-  }
-  return { patched, attempted };
 }
 
 // Truncate to max chars, preferring a clean sentence boundary. If the last

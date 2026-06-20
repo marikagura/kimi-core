@@ -115,7 +115,7 @@ export interface ActionHandler {
 // daemon and any frontend read these back.
 const MARKER_SOURCE = "agency";
 
-async function writeDecisionMarker(
+export async function writeDecisionMarker(
   type: string,
   outcome: ActionResult["outcome"],
   reason: string,
@@ -140,7 +140,8 @@ async function writeDecisionMarker(
 }
 
 // Read the dispatch mode a handler was invoked under (stashed by dispatchAction).
-function modeOf(ctx: ActionContext): AutonomyMode {
+// Exported so opt-in extension actions can honor the same propose/auto gate.
+export function modeOf(ctx: ActionContext): AutonomyMode {
   return (ctx as ActionContext & { mode?: AutonomyMode }).mode ?? DEFAULT_AUTONOMY_MODE;
 }
 

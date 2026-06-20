@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Block a commit whose MESSAGE carries private residue (names / nicknames / paths in the text).
+set -uo pipefail
+root="$(git rev-parse --show-toplevel)"
+msg="$1"
+fail=0
+if grep -nIE '/Users/[A-Za-z]|sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z]+ PRIVATE KEY' "$msg" >/dev/null 2>&1; then
+  echo "✗ commit message contains a path/credential shape:"
+  grep -nIE '/Users/[A-Za-z]|sk-[A-Za-z0-9]{20,}' "$msg"; fail=1
+fi
+if [ -f "$root/.scrub-secrets.local" ]; then
+  while IFS= read -r w; do
+    [ -z "$w" ] && continue; case "$w" in \#*) continue ;; esac
+    if grep -nIE "$w" "$msg" >/dev/null 2>&1; then
+      echo "✗ private word in commit message [$w]"; fail=1
+    fi
+  done < "$root/.scrub-secrets.local"
+fi
+[ "$fail" -ne 0 ] && { echo "✗ COMMIT-MSG GATE FAILED — scrub the message (or --no-verify if truly intended)."; exit 1; }
+exit 0

@@ -1,0 +1,7 @@
+# Allowed author/committer emails — extended-regex, anchored ^…$ by the checker.
+# PUBLIC identities ONLY. This file ships in the repo, so it must never list a
+# private address. Add a line to allow a new public identity.
+akira\.kimi\.ito@gmail\.com
+[0-9]+\+marikagura@users\.noreply\.github\.com
+marikagura@users\.noreply\.github\.com
+noreply@github\.com

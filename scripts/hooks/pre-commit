@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Earliest gate: block a commit that would use a non-public identity, or that adds
+# private residue to tracked content. Enable once:  git config core.hooksPath scripts/hooks
+set -uo pipefail
+root="$(git rev-parse --show-toplevel)"
+bash "$root/scripts/check-identity.sh" --commit || exit 1
+bash "$root/scripts/scrub-scan.sh" || exit 1

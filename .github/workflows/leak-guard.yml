@@ -1,0 +1,20 @@
+name: leak-guard
+# Backstop for anything that bypasses local hooks (--no-verify, a different machine).
+# Allowlist-based identity gate + shape-layer content scrub. Names no private data,
+# so this workflow is safe to ship publicly. The private-word layer stays local
+# (.scrub-secrets.local is gitignored and never reaches CI) — that's by design.
+on:
+  push:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history so every commit's identity is checked
+      - name: identity allow-gate (all commits)
+        run: bash scripts/check-identity.sh --all
+      - name: shape-layer content scrub
+        run: bash scripts/scrub-scan.sh

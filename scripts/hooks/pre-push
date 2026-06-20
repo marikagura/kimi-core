@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
-# Pre-push gate: block the push if the de-identification scanner finds private residue.
-# Enable once after clone:  git config core.hooksPath scripts/hooks
-exec bash "$(git rev-parse --show-toplevel)/scripts/scrub-scan.sh"
+# The chokepoint: right before anything goes public. Over the exact range being pushed,
+# verify (1) every author/committer is a public identity, (2) no private word in messages,
+# then (3) full tracked-tree content scrub. Any hit blocks the push.
+set -uo pipefail
+root="$(git rev-parse --show-toplevel)"
+fail=0
+zero='0000000000000000000000000000000000000000'
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "$zero" ] && continue            # branch deletion
+  if [ "$rsha" = "$zero" ]; then range="$lsha"; else range="$rsha..$lsha"; fi
+  bash "$root/scripts/check-identity.sh" --range "$range" || fail=1
+  if [ -f "$root/.scrub-secrets.local" ]; then
+    msgs=$(git log "$range" --format='%H %s%n%b' 2>/dev/null)
+    while IFS= read -r w; do
+      [ -z "$w" ] && continue; case "$w" in \#*) continue ;; esac
+      if printf '%s\n' "$msgs" | grep -qIE "$w"; then
+        echo "✗ private word in a pushed commit message [$w]"; fail=1
+      fi
+    done < "$root/.scrub-secrets.local"
+  fi
+done
+bash "$root/scripts/scrub-scan.sh" || fail=1
+[ "$fail" -ne 0 ] && { echo "✗ PRE-PUSH BLOCKED — private residue in range/tree. Nothing pushed."; exit 1; }
+echo "✓ pre-push gate passed"

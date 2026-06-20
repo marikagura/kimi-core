@@ -14,6 +14,7 @@ import { roleModel } from "./lib/models.js";
 import { chatCompletion } from "./lib/llm.js";
 import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
 import { firstJsonObject } from "./lib/json-extract.js";
+import { parseDigest, parseSessionScore, type Digest } from "./lib/llm-schemas.js";
 
 // No built-in model — every model is the deployer's own (KIMI_MODEL, with optional
 // per-role overrides INTEL_MODEL / INTEL_DIGEST_MODEL / INTEL_SWEEP_MODEL /
@@ -66,17 +67,6 @@ function parseCandidates(response: string): any[] {
   } catch {
     return [];
   }
-}
-
-function parseSessionScore(response: string): { valence: number; arousal: number; note: string } | null {
-  const obj = firstJsonObject(response);
-  if (!obj) return null;
-  // Main call wraps as { sessionScore: {...} }; retry call returns {valence, arousal, note} bare.
-  const score = obj.sessionScore ?? obj;
-  if (score && typeof score.valence === "number" && typeof score.arousal === "number") {
-    return { valence: score.valence, arousal: score.arousal, note: score.note ?? "" };
-  }
-  return null;
 }
 
 // When the main call returns candidates=[] it often drops sessionScore too. This
@@ -397,7 +387,7 @@ Output JSON (JSON only, no markdown fence):
     try {
       // Retry once on failure (network / JSON parse / refusal).
       let raw = "";
-      let p: any = {};
+      let p: Digest | null = null;
       let attempts = 0;
       for (attempts = 1; attempts <= 2; attempts++) {
         try {
@@ -406,14 +396,14 @@ Output JSON (JSON only, no markdown fence):
           console.warn(`[dialogue_digest] ${dateStr} callLLM attempt ${attempts} threw: ${err?.message ?? err}`);
           raw = "";
         }
-        p = firstJsonObject(raw) ?? {};
-        if (p.summary) break;
+        p = parseDigest(raw);
+        if (p) break;
         if (attempts < 2) {
           console.warn(`[dialogue_digest] ${dateStr} attempt ${attempts} no summary (raw_len=${raw.length}), retrying`);
           await new Promise(r => setTimeout(r, 1500));
         }
       }
-      if (!p.summary) {
+      if (!p) {
         // Both attempts failed (refusal / non-JSON / empty) → do not write a fake
         // row to pollute the pool. Skip this session; the next tick's dedup finds
         // nothing and re-runs automatically.
@@ -422,20 +412,20 @@ Output JSON (JSON only, no markdown fence):
         continue;
       }
 
-      if (typeof p.valence === "number") {
+      if (p.valence !== null) {
         scoreV = p.valence;
-        scoreA = typeof p.arousal === "number" ? p.arousal : null;
-        scoreNote = String(p.summary).split("\n")[0].slice(0, 120);
+        scoreA = p.arousal;
+        scoreNote = p.summary.split("\n")[0].slice(0, 120);
       }
 
       let topicId: string | null = null;
-      if (p.suggested_topic_slug && typeof p.suggested_topic_slug === "string") {
+      if (p.suggested_topic_slug) {
         const t = await prisma.topic.findUnique({ where: { slug: p.suggested_topic_slug } });
         if (t) topicId = t.id;
       }
 
-      const dContent = String(p.summary).slice(0, 2000);
-      const dSummary = String(p.summary).slice(0, 200);
+      const dContent = p.summary.slice(0, 2000);
+      const dSummary = p.summary.slice(0, 200);
       const firstEvent = parsed[0].event;
       const lastEvent = parsed[parsed.length - 1].event;
       const digestMem = await prisma.memory.create({
@@ -445,8 +435,8 @@ Output JSON (JSON only, no markdown fence):
           content: dContent,
           summary: dSummary,
           importance: 2,
-          valence: typeof p.valence === "number" ? p.valence : null,
-          arousal: typeof p.arousal === "number" ? p.arousal : null,
+          valence: p.valence,
+          arousal: p.arousal,
           topicId,
           eventIdStart: firstEvent.id,
           eventIdEnd: lastEvent.id,

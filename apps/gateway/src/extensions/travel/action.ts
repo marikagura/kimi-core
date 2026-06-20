@@ -2,7 +2,7 @@
 // with an OUTWARD, GENERATIVE action (contrast DIARY's inward self-reflection).
 //
 // When the wake daemon chooses "TRAVEL", the agent has generated an imaginative
-// outing / scene this tick (parsed.action_content); this handler records it as an
+// outing this tick (parsed.action_content); this handler records it as an
 // EPISODE memory under the same autonomy gate + decision marker the built-ins use.
 // Delivery (a push) is the daemon's pluggable Notifier, wired separately — not here.
 //
@@ -10,8 +10,8 @@
 // starts:  import { registerTravelAction } from "./extensions/travel/action.js";
 //          registerTravelAction();
 //
-// (Generalized from a live build's "travel" daemon — persona prompt, push timing,
-// and field-specific content were stripped; what remains is the action shape.)
+// A sample action shape only: the daemon generates the content (from your
+// persona.md), the Notifier handles delivery — this handler just records it.
 
 import prisma from "../../db.js";
 import { localDateTime } from "../../time.js";
@@ -29,7 +29,7 @@ const TRAVEL = "TRAVEL";
 export const travelAction: ActionHandler = {
   type: TRAVEL,
   describe: () =>
-    "Record an imaginative outing/scene the agent generated this tick as an EPISODE memory (opt-in sample generative action).",
+    "Record an imaginative outing the agent generated this tick as an EPISODE memory (opt-in sample generative action).",
   async run(ctx: ActionContext): Promise<ActionResult> {
     const { parsed, now } = ctx;
     const body = (parsed.action_content ?? "").trim();

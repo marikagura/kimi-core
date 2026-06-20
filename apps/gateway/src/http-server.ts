@@ -73,7 +73,7 @@ app.post("/mcp", express.json(), async (req, res) => {
   try {
     const server = createMcpServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    res.on("close", () => { transport.close(); server.close(); });
+    res.on("close", () => { void transport.close(); void server.close(); });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (err: unknown) {

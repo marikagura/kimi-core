@@ -475,24 +475,6 @@ Output JSON (JSON only, no markdown fence):
   return { created, skipped, failed };
 }
 
-// Truncate to max chars, preferring a clean sentence boundary. If the last
-// punctuation mark lands within the first 60% of the window, that cut would
-// lose too much — fall back to a hard cut with "…".
-function cleanTruncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  const cut = s.slice(0, max);
-  const lastPunct = Math.max(
-    cut.lastIndexOf("。"),
-    cut.lastIndexOf("！"),
-    cut.lastIndexOf("？"),
-    cut.lastIndexOf(". "),
-    cut.lastIndexOf("! "),
-    cut.lastIndexOf("? "),
-  );
-  if (lastPunct > max * 0.6) return cut.slice(0, lastPunct + 1);
-  return cut + "…";
-}
-
 async function runAll() {
   const ts = localDateTime(new Date());
   console.log(`[${ts}] running intelligence...`);
@@ -583,7 +565,7 @@ const CRON_TZ = process.env.KIMI_CRON_TZ ?? DEFAULT_TZ;
 // an unhandled rejection that crashes the long-lived intel process.
 const safeRunAll = () => runAll().catch((e: unknown) => console.error("[intel] runAll error:", errMessage(e)));
 cron.schedule(DAILY_CRON, safeRunAll, { timezone: CRON_TZ });
-safeRunAll();
+void safeRunAll();
 
 // dialogue_digest hourly tick — a session is digested once it has been idle for
 // GAP_H. A concurrency lock prevents a second run starting before the previous
@@ -604,6 +586,6 @@ async function digestTick() {
 }
 const safeDigestTick = () => digestTick().catch((e: unknown) => console.error("[intel] digestTick error:", errMessage(e)));
 cron.schedule(DIGEST_CRON, safeDigestTick, { timezone: CRON_TZ });
-safeDigestTick();
+void safeDigestTick();
 
 console.log(`intel started. runAll cron=${DAILY_CRON} ${CRON_TZ}; dialogue_digest cron=${DIGEST_CRON}.`);

@@ -23,11 +23,14 @@
     "scrub": "bash scripts/scrub-scan.sh",
     "eval": "tsx apps/gateway/src/eval/run.ts",
     "eval:history": "tsx apps/gateway/src/eval/history.ts",
+    "lint": "eslint .",
     "test": "vitest run"
   },
   "devDependencies": {
+    "eslint": "^9.39.4",
     "turbo": "^2.0.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.61.1",
     "vitest": "^4.1.9"
   },
   "dependencies": {

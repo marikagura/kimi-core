@@ -12,6 +12,7 @@
 import prisma from "../db.js";
 import { embedText, writeEmbedding } from "./embed.js";
 import { sweepMemoryMentions } from "./entity-mentions.js";
+import { errMessage } from "./err.js";
 import { findSimilarMemories } from "./memory-similarity.js";
 
 export interface IndexResult {
@@ -35,16 +36,16 @@ export async function indexNewMemory(
   try {
     emb = await embedText(embedInput);
     if (emb) await writeEmbedding("memories", memoryId, emb);
-  } catch (e: any) {
-    console.warn(`[${tag}] embedding failed (sweep will retry): ${e?.message ?? e}`);
+  } catch (e: unknown) {
+    console.warn(`[${tag}] embedding failed (sweep will retry): ${errMessage(e)}`);
   }
 
   // 2. Entity→memory mention edges. Independent of the embed — its own catch, so
   //    an embed failure never blocks mentions and vice-versa.
   try {
     await sweepMemoryMentions(memoryId);
-  } catch (e: any) {
-    console.warn(`[${tag}] mention sweep failed: ${e?.message ?? e}`);
+  } catch (e: unknown) {
+    console.warn(`[${tag}] mention sweep failed: ${errMessage(e)}`);
   }
 
   // 3. Memory→memory similar edges (closeout's keyMemories only). Needs the

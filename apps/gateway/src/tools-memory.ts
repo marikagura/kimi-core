@@ -12,6 +12,7 @@ import { indexNewMemory } from "./lib/memory-index.js";
 import { scoreMemories } from "./lib/retrieval.js";
 import { walkGraph } from "./lib/graph-walk.js";
 import { tagDepthIfNeeded } from "./lib/depth-judge.js";
+import { errMessage } from "./lib/err.js";
 import { publicSearchDrop } from "./lib/reentry-filter.js";
 
 export function registerMemoryTools(server: McpServer) {
@@ -165,8 +166,8 @@ export function registerMemoryTools(server: McpServer) {
             value: JSON.stringify(crumb),
           },
         });
-      } catch (e: any) {
-        console.warn("[memory_write] breadcrumb event failed:", e?.message ?? e);
+      } catch (e: unknown) {
+        console.warn("[memory_write] breadcrumb event failed:", errMessage(e));
       }
 
       return { content: [{ type: "text", text: `Memory saved: ${memory.id} — "${memory.title}"` }] };

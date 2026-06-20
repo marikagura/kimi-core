@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # Block a commit whose MESSAGE carries private residue (names / nicknames / paths in the text).
+# Standard trailers (Co-Authored-By / Signed-off-by) are skipped, so a mandated
+# Co-Authored-By line can never trip the gate even if the denylist later grows to
+# overlap it. Only structured trailer lines are skipped; the rest of the message is scanned.
 set -uo pipefail
 root="$(git rev-parse --show-toplevel)"
 msg="$1"
 fail=0
-if grep -nIE '/Users/[A-Za-z]|sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z]+ PRIVATE KEY' "$msg" >/dev/null 2>&1; then
+body=$(grep -viE '^[[:space:]]*(co-authored-by|signed-off-by):' "$msg" 2>/dev/null || true)
+scan() { printf '%s\n' "$body" | grep -nIE "$1"; }
+
+if scan '/Users/[A-Za-z]|sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z]+ PRIVATE KEY' >/dev/null 2>&1; then
   echo "✗ commit message contains a path/credential shape:"
-  grep -nIE '/Users/[A-Za-z]|sk-[A-Za-z0-9]{20,}' "$msg"; fail=1
+  scan '/Users/[A-Za-z]|sk-[A-Za-z0-9]{20,}'; fail=1
 fi
 if [ -f "$root/.scrub-secrets.local" ]; then
   while IFS= read -r w; do
     [ -z "$w" ] && continue; case "$w" in \#*) continue ;; esac
-    if grep -nIE "$w" "$msg" >/dev/null 2>&1; then
-      echo "✗ private word in commit message [$w]"; fail=1
-    fi
+    if scan "$w" >/dev/null 2>&1; then echo "✗ private word in commit message [$w]"; fail=1; fi
   done < "$root/.scrub-secrets.local"
 fi
 [ "$fail" -ne 0 ] && { echo "✗ COMMIT-MSG GATE FAILED — scrub the message (or --no-verify if truly intended)."; exit 1; }

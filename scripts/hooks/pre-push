@@ -11,7 +11,7 @@ while read -r lref lsha rref rsha; do
   if [ "$rsha" = "$zero" ]; then range="$lsha"; else range="$rsha..$lsha"; fi
   bash "$root/scripts/check-identity.sh" --range "$range" || fail=1
   if [ -f "$root/.scrub-secrets.local" ]; then
-    msgs=$(git log "$range" --format='%H %s%n%b' 2>/dev/null)
+    msgs=$(git log "$range" --format='%H %s%n%b' 2>/dev/null | grep -viE '^[[:space:]]*(co-authored-by|signed-off-by):')
     while IFS= read -r w; do
       [ -z "$w" ] && continue; case "$w" in \#*) continue ;; esac
       if printf '%s\n' "$msgs" | grep -qIE "$w"; then

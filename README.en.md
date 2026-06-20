@@ -129,6 +129,57 @@ The agent walks a conversation's lifecycle through these three MCP tools:
 
 These three names are a continuation of the author's canon. If you have words you've agreed on with your AI, rename them **in code**: the tool name in `tools.ts` plus every reference in `AGENTS.md` / your agent prompts — together, or the agent won't find them by the old name.
 
+## Tool reference (full MCP set)
+
+`registerAllTools` ships these 6 groups, 28 tools, called by the agent mid-conversation (the table above is `npm run` CLI commands — a different category).
+
+**Memory (7)**
+
+- `memory_search` — hybrid scoring: semantic (pgvector) + ILIKE substring (CJK-friendly) + pg_trgm fuzzy (Latin-friendly) + entity-mention edges, unified ranking with no short-circuit. `scope=full` widens to the observation/profile/RESTRICTED private pool; `rerank=true` runs a local cross-encoder (slower — for oblique / semantic / whole-picture recall).
+- `memory_search_safe` — non-sensitive retrieval for collaborating external agents: the server hard-locks `scope=default`, refuses RESTRICTED/SELF_SCORE, and runs each hit through a public-facing content predicate.
+- `memory_write` — write a memory with emotional coordinates (valence/arousal) + experiencer (USER/SELF/SHARED).
+- `memory_read` — read recent memories or all of a type (RESTRICTED excluded by default).
+- `memory_close` — soft delete (isActive=false).
+- `memory_reopen` — reopen a SELF_CONCERN that selfSweep mis-resolved back to OPEN.
+- `graph_walk` — multi-hop (1–3) BFS over the knowledge-graph `links` edges; find what a memory/entity/topic connects to.
+
+**State / topic / event (8)**
+
+- `state_set` / `state_get` / `state_read` / `state_close` — write / fetch-body / read / close active states (`summary` required, ≥20 chars; reentry reads only the summary to avoid token blowup).
+- `topic_create` / `topic_list` — create / list topics.
+- `event_log` / `event_read` — log / read events (filter by type·source, default last 24h).
+
+**Entity (knowledge graph V2) (4)**
+
+- `entity_write` — upsert an entity (PERSON / TOOL / PLATFORM / PROJECT / CONCEPT).
+- `entity_search` / `entity_list` — search by name·summary / list by type.
+- `entity_close` — deactivate (status=INACTIVE, not deleted; historical references stay queryable).
+
+**Profile / register / observation (6)**
+
+- `profile_read` / `profile_set` — read / write core profile.
+- `private_read` — read the `private_*` restricted profile tier.
+- `register_read` / `register_set` — read / write speaking-style presets (register profiles).
+- `observation_write` — write one observation (a passive observation record).
+
+**Session lifecycle (3)** — see the section above: `reentry` / `reentry_delta` / `closeout`.
+
+**Optional extension · paper (2, not in the default registry)** — a worked example of how to bolt on a domain tool with its own store: `paper_write` / `paper_search` (write / search academic notes in `paper_notes`, separate from memory).
+
+## Configuration knobs
+
+The engine's knobs are all env-driven and default to safe (fail-closed / off):
+
+- **Drive dimensions (`DRIVE_DIMS`)** — the drive roster is customizable: a JSON array listing your own dimensions; unset falls back to the in-code example `DEFAULT_DRIVE_DIMS`. The engine reads no YAML; the dimension shape is in **[docs/DRIVES.en.md](./docs/DRIVES.en.md)**. Even *what it wants* is yours to define, not four hard-coded ones.
+- **HITL knob (`DAEMON_AUTONOMY_MODE`)** — `propose` (default, human-in-the-loop: outward actions are staged, not sent) / `auto` (commit directly). `DAEMON_WAKE_CRON` tunes the wake cadence.
+- **Delivery / search providers** — `NOTIFIER`: `none` / `console` / `webhook` (+ `NOTIFIER_WEBHOOK_URL`, daemon outward push); `SEARCH_PROVIDER`: `none` / `http` (curiosity web search). Env-driven, off by default, reference impl in `lib/providers.ts`.
+- **Rerank (`RERANK_PROVIDER`)** — `none` / `local` / `cohere` / `jina` / `voyage`; the optional cross-encoder rerank stage at the tail of retrieval.
+
+## Two stances worth not skipping
+
+- **`DO_NOTHING` is a peer action, not a fallback default.** In post-wake action selection, "stay quiet this time" and "send one" rank as equals — abstaining is itself an expression of agency, not an obligation to interrupt you every wake. Full argument in **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md) §2**.
+- **Behavioral verification > static inference.** The self-audit harness points a set of agents at the fork to *trigger behavior* and find leaks / bugs, rather than reading code statically and inferring "looks fine" — because static inference systematically over-claims. See **[docs/SELF-AUDIT.en.md](./docs/SELF-AUDIT.en.md)**.
+
 ## License
 
 AGPL-3.0-or-later.

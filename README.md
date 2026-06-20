@@ -122,6 +122,57 @@ agent 在一段对话里按这三个 MCP 工具走完整个生命周期：
 
 这三个名字是作者 canon 的延续。如果你有和 AI 约定好的词，请**在代码里**自行修改：`tools.ts` 的工具名 + `AGENTS.md`、agent prompt 里所有引用处——一起改，否则 agent 按旧名将无法调用。
 
+## 工具全集速查（MCP 工具）
+
+`registerAllTools` 默认挂这 6 组、共 28 个工具，agent 在对话里调（上面那张表是 `npm run` CLI 命令，两类不同）。
+
+**记忆 · memory（7）**
+
+- `memory_search` —— 混合检索：语义(pgvector)+ ILIKE 子串(CJK 友好)+ pg_trgm 模糊(Latin 友好)+ entity-mention 边，统一排序不短路。`scope=full` 扩到 observation/profile/RESTRICTED 私池，`rerank=true` 走本地 cross-encoder 重排（更慢，给 oblique / 语义 / 全局回忆用）。
+- `memory_search_safe` —— 给协作的外部 agent 的非敏感检索：server 硬锁 `scope=default`、拒 RESTRICTED/SELF_SCORE、每条过一遍公开内容谓词。
+- `memory_write` —— 写一条记忆，带情感坐标(valence/arousal)+ experiencer(USER/SELF/SHARED)。
+- `memory_read` —— 读近期记忆或某类型全部（RESTRICTED 默认排除）。
+- `memory_close` —— 软删除(isActive=false)。
+- `memory_reopen` —— 把被 selfSweep 误判 RESOLVED/SUPPRESSED 的 SELF_CONCERN 重新打开为 OPEN。
+- `graph_walk` —— 沿知识图 `links` 边多跳(1–3) BFS 游走，找一条记忆/实体/话题连着什么。
+
+**状态 / 话题 / 事件 · state（8）**
+
+- `state_set` / `state_get` / `state_read` / `state_close` —— active state 的写 / 取全文 / 读 / 关（`summary` 必填 ≥20 字，reentry 只读 summary 防 token 爆）。
+- `topic_create` / `topic_list` —— 话题建 / 列。
+- `event_log` / `event_read` —— 事件记 / 读（按 type·source 过滤，默认近 24h）。
+
+**实体（知识图 V2）· entity（4）**
+
+- `entity_write` —— upsert 实体（PERSON / TOOL / PLATFORM / PROJECT / CONCEPT）。
+- `entity_search` / `entity_list` —— 按名·摘要搜 / 按类型列。
+- `entity_close` —— 停用(status=INACTIVE，不删，历史引用仍可查)。
+
+**画像 / register / 观察 · profile（6）**
+
+- `profile_read` / `profile_set` —— core profile 读 / 写。
+- `private_read` —— 读 `private_*` 受限画像层。
+- `register_read` / `register_set` —— 说话风格预设(register profile)读 / 写。
+- `observation_write` —— 写一条 observation（被动观察记录）。
+
+**会话生命周期（3）** —— 详见上一节：`reentry` / `reentry_delta` / `closeout`。
+
+**可选扩展 · paper（2，不在默认 registry）** —— 领域工具的扩展范例，演示怎么挂一个独立 store：`paper_write` / `paper_search`（学术知识点写入 / 检索 `paper_notes`，与 memory 分离）。
+
+## 可配置项
+
+引擎的几个旋钮都走 env，默认安全（fail-closed / 全关）：
+
+- **drive 维度（`DRIVE_DIMS`）** —— drive roster 是可自定义的：一个 JSON 数组列你自己的维度；不设则用代码里的范例 `DEFAULT_DRIVE_DIMS`。引擎不读 YAML，维度形状见 **[docs/DRIVES.md](./docs/DRIVES.md)**。连「它想要什么」都是你定义的，不是写死四个。
+- **HITL 旋钮（`DAEMON_AUTONOMY_MODE`）** —— `propose`（默认，human-in-the-loop：对外动作只 staged、不直接发）/ `auto`（直接 commit）。`DAEMON_WAKE_CRON` 调唤醒节奏。
+- **投递 / 搜索 providers** —— `NOTIFIER`：`none` / `console` / `webhook`（+ `NOTIFIER_WEBHOOK_URL`，daemon 对外推送）；`SEARCH_PROVIDER`：`none` / `http`（好奇心 web search）。env 驱动、默认全关，参考实现在 `lib/providers.ts`。
+- **rerank（`RERANK_PROVIDER`）** —— `none` / `local` / `cohere` / `jina` / `voyage`；检索末端可选的 cross-encoder 重排阶段。
+
+## 两条容易被略过的姿态
+
+- **`DO_NOTHING` 是平权的一个 action，不是兜底默认。** 唤醒后的 action selection 里，「这次不出声」和「发一条」同权——弃权本身就是能动性的一种表达，不是每次醒来都必须打扰你。完整论证见 **[docs/AUTONOMY.md](./docs/AUTONOMY.md) §2**。
+- **行为级验证 > 静态推断。** 自审 harness 用一组 agent 真去触发行为来查 leak / bug，而不是静态读代码推断「应该没问题」——因为静态推断会系统性 over-claim。见 **[docs/SELF-AUDIT.md](./docs/SELF-AUDIT.md)**。
+
 ## License
 
 AGPL-3.0-or-later。

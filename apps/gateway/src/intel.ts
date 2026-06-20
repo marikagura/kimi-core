@@ -10,6 +10,7 @@ import { writeSessionScore } from "./lib/session-score.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
 import { checkDimHealth } from "./lib/dim-health.js";
+import { checkCurationHealth } from "./lib/curation-health.js";
 import { roleModel } from "./lib/models.js";
 import { chatCompletion } from "./lib/llm.js";
 import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
@@ -512,6 +513,15 @@ async function runAll() {
     const r = await checkDimHealth();
     summary.push(`dim_health: ${r.roster.map((d) => `${d.key}=${d.grounding.toFixed(2)}${d.dark ? "(!)" : ""}`).join(" ")}`);
   } catch (e: unknown) { const m = errMessage(e); console.error("dim_health err:", m); summary.push(`dim_health: ERR ${m}`); }
+
+  // Curation-health probe: the append-only store needs human curation (no auto-
+  // consolidation by design). Surfaces the manual-review pool + a nudge when it
+  // piles up, so a deployment without a backstage UI still gets reminded. Wrapped
+  // in try so a failure only drops this summary line, never the main flow.
+  try {
+    const r = await checkCurationHealth();
+    summary.push(`curation: active=${r.activeTotal} high-imp=${r.highImportance} open-concerns=${r.openConcerns}${r.flags.length ? ` (!) ${r.flags.join(",")}` : ""}`);
+  } catch (e: unknown) { const m = errMessage(e); console.error("curation_health err:", m); summary.push(`curation: ERR ${m}`); }
   // dialogue_digest runs on its own hourly tick (digestTick, below): a session is
   // digested once it has been idle for GAP_H. It is not run here to avoid a
   // concurrent dedup collision with the tick. This is the only digest path.

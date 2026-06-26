@@ -5,9 +5,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerAllTools } from "./tools.js";
+import { loadExtensions } from "./lib/extensions.js";
+import { enabledExtensions } from "./lib/enabled-extensions.js";
 
 const server = new McpServer({ name: "kimi", version: "0.1.0" });
 registerAllTools(server);
+loadExtensions(server, enabledExtensions());
 
 async function main() {
   const transport = new StdioServerTransport();

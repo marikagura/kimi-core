@@ -5,6 +5,8 @@ import cors from "cors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerAllTools } from "./tools.js";
+import { loadExtensions } from "./lib/extensions.js";
+import { enabledExtensions } from "./lib/enabled-extensions.js";
 import { errMessage } from "./lib/err.js";
 
 const app = express();
@@ -92,6 +94,7 @@ app.delete("/mcp", (_req, res) =>
 function createMcpServer() {
   const server = new McpServer({ name: "kimi", version: "0.1.0" });
   registerAllTools(server);
+  loadExtensions(server, enabledExtensions());
   return server;
 }
 

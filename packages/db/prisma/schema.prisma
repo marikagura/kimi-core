@@ -417,6 +417,26 @@ model PaperNote {
   @@map("paper_notes")
 }
 
+// Store extension — structured surface store for kimi-room / kimi-manor (calendar
+// / sleep / keepsakes / study / memory-worldbook rows), independent of the memory
+// engine. One uniform table keyed by `collection`; the row body is jsonb `data`.
+// Written/read by the store extension's `store` tool (CRUD for front-ends), NOT
+// the agent-text memory tools. createdAt/updatedAt are written explicitly (no
+// @default/@updatedAt) so they survive an export→import round-trip unchanged and
+// stay identical across the idb / supabase / prisma / core adapters. Lives here
+// only because Prisma uses one schema file; the rest is under
+// apps/gateway/src/extensions/store/. See that dir to disable.
+model StoreRow {
+  id         String   @id
+  collection String
+  data       Json
+  createdAt  DateTime
+  updatedAt  DateTime
+
+  @@index([collection])
+  @@map("store_rows")
+}
+
 enum Domain {
   WORK
   LOVE

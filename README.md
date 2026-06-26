@@ -9,6 +9,7 @@
 请读 **[docs/AUTONOMY.md](./docs/AUTONOMY.md)**——架构论证、完整 citations，以及诚实的断层线。
 搭这套东西踩过的工程陷阱都收在 **[docs/PATTERNS.md](./docs/PATTERNS.md)**——缓存、冷启动、Prisma/pgvector、检索、agent 安全、retry、时间等十六类，无声失败和域内专有的在前、基础卫生(table-stakes)附在文末。fork 前建议通读一遍。
 认知纪律（检索优先 / 不编 / 归因 / 对称验证 / concern self-check）见 **[docs/EPISTEMIC.md](./docs/EPISTEMIC.md)**——这是 AGENTS.md epistemic 层的操作手册。
+想把它当一个前端的**唯一后端**（记忆 + dashboard 数据 + 状态快照）用，见 **[docs/ONE-ENGINE.md](./docs/ONE-ENGINE.md)**——配 [kimi-room](https://github.com/marikagura/kimi-room)（PWA）/ [kimi-manor](https://github.com/marikagura/kimi-manor)（桌面仪表盘），开 `KIMI_EXTENSIONS=store` 即可。
 
 > **状态：引擎完整，有测试有文档。** hybrid retrieval、self-drive / concern、可复现 eval、对话式
 > onboarding、参考投递 providers、对抗式自审 harness 都已落地（tsc + test + scrub 在 CI 里跑）。
@@ -158,6 +159,10 @@ agent 在一段对话里按这三个 MCP 工具走完整个生命周期：
 **会话生命周期（3）** —— 详见上一节：`reentry` / `reentry_delta` / `closeout`。
 
 **可选扩展 · paper（2，不在默认 registry）** —— 领域工具的扩展范例，演示怎么挂一个独立 store：`paper_write` / `paper_search`（学术知识点写入 / 检索 `paper_notes`，与 memory 分离）。
+
+**可选扩展 · store** —— 给前端 surface（kimi-room / kimi-manor）的结构化数据 store：`store`（`store_rows` 上的 CRUD —— 日历 / 睡眠 / 纪念等，按 `collection` 分）+ `state_snapshot`（仪表盘只读快照）。返回 JSON 而非 agent-text，与 memory 引擎分离，让一个前端能把同一个 core 当唯一后端用。
+
+扩展默认全关。用 `KIMI_EXTENSIONS=store`（逗号分隔，如 `store,paper`）按名启用，或在 `registerAllTools(server)` 之后手动 `loadExtensions(server, [storeExtension])`。
 
 ## 可配置项
 

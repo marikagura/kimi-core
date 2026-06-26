@@ -105,6 +105,12 @@ async function getExistingMemoryTitles(): Promise<string> {
   return memories.map((m) => m.title).join("\n- ");
 }
 
+// Reference extractor — distils memory candidates from chat. It is the TEMPLATE
+// for ANY ingestion source: clone it and swap the query/source. A real deployment
+// can run parallel extractors over email / dreams / telegram / location / phone /
+// calendar / … — same candidate pipeline, only the `prisma.event.findMany` source
+// (and the system prompt's framing) differ. One generic chat extractor ships here;
+// wiring more sources is a per-deployment choice (each source is personal).
 async function extractFromChat(since: Date, existingTitles: string) {
   const chats = await prisma.event.findMany({
     where: { eventType: "CHAT", source: CHAT_SOURCE, createdAt: { gte: since } },

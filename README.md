@@ -77,6 +77,17 @@ npm run daemon:wake     # 只立刻跑一次 wake —— 用来验证
 
 > 诚实交代：作者端到端验证过引擎 + eval；完整的 daemon wake 循环（接线 / model / 传输都已对齐）请你用自己的 token 在自己机器上确认一次。
 
+## 运行 intel（digests + concern sweep · 可选）
+
+引擎还带一个 **intel 进程**（`apps/gateway/src/intel.ts`）——按 cron 把原始对话整理成 dialogue digests，并每日跑一次 concern 的 decay→sweep→derive（自情绪扫描）。它**不绑 Claude**（走你配的 `KIMI_MODEL`，可选 `INTEL_MODEL` / `INTEL_DIGEST_MODEL` / `INTEL_SWEEP_MODEL` 角色覆盖），所以比 daemon 更易跑：
+
+```bash
+cd apps/gateway
+npm run intel           # 自带 cron 自调度（daily runAll + 每小时 digest tick）
+```
+
+不跑它，记忆仍可检索；只是没有自动 digest（喂 reentry 的「近期对话摘要」）和每日 concern sweep。`extractFromChat` 是范例抽取器——克隆它、换数据源即可从 email / dream / telegram 等任意来源抽 memory candidate（各来源是部署者自己的，故只附通用对话版）。
+
 ## 存储
 
 一个 `DATABASE_URL`，三种跑法 —— 同一份代码，不加任何后端：

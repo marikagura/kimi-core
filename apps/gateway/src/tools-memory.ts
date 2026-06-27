@@ -14,6 +14,7 @@ import { walkGraph } from "./lib/graph-walk.js";
 import { tagDepthIfNeeded } from "./lib/depth-judge.js";
 import { errMessage } from "./lib/err.js";
 import { publicSearchDrop } from "./lib/reentry-filter.js";
+import { getNotifier } from "./lib/providers.js";
 
 export function registerMemoryTools(server: McpServer) {
   server.tool(
@@ -486,6 +487,16 @@ export function registerMemoryTools(server: McpServer) {
       } catch (e: unknown) {
         console.warn("[memory_edit] breadcrumb event failed:", errMessage(e));
       }
+
+      // Review notification — so any edit (especially an unwanted one) is visible
+      // out-of-band and can be rolled back. Routes through the pluggable notifier
+      // (NOTIFIER env: console default / webhook). Best-effort; never blocks.
+      void getNotifier()
+        .send({
+          content: `memory_edit: ${id} — changed ${Object.keys(data).join(", ")} · authorized: "${authorization.slice(0, 80)}"`,
+          slug: `memory-edit-${id}`,
+        })
+        .catch((e: unknown) => console.warn("[memory_edit] notify failed:", errMessage(e)));
 
       return { content: [{ type: "text", text: `Edited memory ${id} — changed ${Object.keys(data).join(", ")}.` }] };
     },

@@ -143,6 +143,7 @@ agent 在一段对话里按这三个 MCP 工具走完整个生命周期：
 - `memory_search` —— 混合检索：语义(pgvector)+ ILIKE 子串(CJK 友好)+ pg_trgm 模糊(Latin 友好)+ entity-mention 边，统一排序不短路。`scope=full` 扩到 observation/profile/RESTRICTED 私池，`rerank=true` 走本地 cross-encoder 重排（更慢，给 oblique / 语义 / 全局回忆用）。
 - `memory_search_safe` —— 给协作的外部 agent 的非敏感检索：server 硬锁 `scope=default`、拒 RESTRICTED/SELF_SCORE、每条过一遍公开内容谓词。
 - `memory_write` —— 写一条记忆，带情感坐标(valence/arousal)+ experiencer(USER/SELF/SHARED)。
+- `memory_edit` —— 按 id 改一条记忆的 title / summary / content / importance（只改传入的字段）。**user-gated**：仅在用户明说要改时调用，必填 `authorization` 引用其原话；不在自主 daemon 的允许名单里。
 - `memory_read` —— 读近期记忆或某类型全部（RESTRICTED 默认排除）。
 - `memory_close` —— 软删除(isActive=false)。
 - `memory_reopen` —— 把被 selfSweep 误判 RESOLVED/SUPPRESSED 的 SELF_CONCERN 重新打开为 OPEN。

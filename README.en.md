@@ -138,6 +138,7 @@ These three names are a continuation of the author's canon. If you have words yo
 - `memory_search` — hybrid scoring: semantic (pgvector) + ILIKE substring (CJK-friendly) + pg_trgm fuzzy (Latin-friendly) + entity-mention edges, unified ranking with no short-circuit. `scope=full` widens to the observation/profile/RESTRICTED private pool; `rerank=true` runs a local cross-encoder (slower — for oblique / semantic / whole-picture recall).
 - `memory_search_safe` — non-sensitive retrieval for collaborating external agents: the server hard-locks `scope=default`, refuses RESTRICTED/SELF_SCORE, and runs each hit through a public-facing content predicate.
 - `memory_write` — write a memory with emotional coordinates (valence/arousal) + experiencer (USER/SELF/SHARED).
+- `memory_edit` — edit one memory's title / summary / content / importance by id (only the fields you pass). **User-gated**: only on an explicit user request, with a required `authorization` field quoting it; not in the autonomous daemon's allowlist.
 - `memory_read` — read recent memories or all of a type (RESTRICTED excluded by default).
 - `memory_close` — soft delete (isActive=false).
 - `memory_reopen` — reopen a SELF_CONCERN that selfSweep mis-resolved back to OPEN.

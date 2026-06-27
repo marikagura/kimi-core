@@ -1,7 +1,7 @@
 {
   "name": "kimi-core",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "A personal, single-user agent memory OS (one human, one AI) — an agentic memory + self-drive engine with a built-in adversarial self-audit harness. Principle: trust neither the AI nor yourself — only external evidence.",
   "license": "AGPL-3.0-or-later",
   "packageManager": "npm@11.6.2",

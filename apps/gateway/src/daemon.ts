@@ -10,6 +10,8 @@ import { getNotifier, getSearchProvider } from "./lib/providers.js";
 import { modelFor } from "./lib/models.js";
 import { firstJsonObject } from "./lib/json-extract.js";
 import { errMessage } from "./lib/err.js";
+import { enabledExtensions } from "./lib/enabled-extensions.js";
+import { loadExtensionActions } from "./lib/extensions.js";
 
 // ============================================================================
 // wake daemon — a timer-driven, read-only agent loop.
@@ -356,6 +358,9 @@ if (!process.env.DATABASE_URL) {
 }
 modelFor("DAEMON_MODEL"); // fail fast at startup: a missing wake model would otherwise only error per-wake, inside a swallowed catch, while "wake daemon up" still prints
 setNotifier(getNotifier()); // install the configured notifier (default: console/no-op)
+// Opt-in extensions' daemon seam: register agency actions and/or start scheduled
+// jobs, by KIMI_EXTENSIONS (e.g. "travel"). Empty env → no-op, core daemon unchanged.
+loadExtensionActions(enabledExtensions());
 // Cron schedule is config-driven (default: 09:00 and 21:00 daily, in KIMI_CRON_TZ).
 const WAKE_CRON = process.env.DAEMON_WAKE_CRON || "0 9,21 * * *";
 const WAKE_TZ = process.env.KIMI_CRON_TZ || DEFAULT_TZ;

@@ -166,6 +166,8 @@ These three names are a continuation of the author's canon. If you have words yo
 
 **Optional extension · paper (2, not in the default registry)** — a worked example of how to bolt on a domain tool with its own store: `paper_write` / `paper_search` (write / search academic notes in `paper_notes`, separate from memory).
 
+Extensions ship off; enable by name with `KIMI_EXTENSIONS` (e.g. `store,travel`) — one env covers both tool extensions (`store` / `paper`) and daemon extensions (`travel` / `demo-feed`). How to write one, and how external signals flow in automatically (`POST /events` / `demo-feed`), is in **[docs/EXTENSIONS.en.md](./docs/EXTENSIONS.en.md)**.
+
 ## Configuration knobs
 
 The engine's knobs are all env-driven and default to safe (fail-closed / off):

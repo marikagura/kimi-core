@@ -73,4 +73,31 @@ export function registerPaperTools(server: McpServer): void {
       return { content: [{ type: "text", text }] };
     },
   );
+
+  server.tool(
+    "paper_list",
+    "List paper_notes as structured JSON for a front-end surface (e.g. the kimi-room papers page) — full rows incl. importance / pinned / dates, pinned + most-important + newest first. Distinct from paper_search, which returns agent-text for RAG.",
+    {
+      includeArchived: z.boolean().optional().describe("Also include isActive=false (rotated-out) notes"),
+      limit: z.number().optional(),
+    },
+    async ({ includeArchived, limit }) => {
+      const rows = await prisma.paperNote.findMany({
+        where: includeArchived ? {} : { isActive: true },
+        orderBy: [{ pinned: "desc" }, { importance: "desc" }, { createdAt: "desc" }],
+        take: Math.min(limit ?? 200, 500),
+        select: {
+          id: true, externalId: true, title: true, journal: true, authors: true, url: true,
+          publishedAt: true, knowledge: true, relevance: true, axis: true,
+          hasFullText: true, importance: true, pinned: true, isActive: true, createdAt: true,
+        },
+      });
+      const out = rows.map((r) => ({
+        ...r,
+        publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
+        createdAt: r.createdAt.toISOString(),
+      }));
+      return { content: [{ type: "text", text: JSON.stringify(out) }] };
+    },
+  );
 }

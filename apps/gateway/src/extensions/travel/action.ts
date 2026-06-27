@@ -6,9 +6,10 @@
 // EPISODE memory under the same autonomy gate + decision marker the built-ins use.
 // Delivery (a push) is the daemon's pluggable Notifier, wired separately — not here.
 //
-// OPT-IN: core does not register this. A deployment enables it before the daemon
-// starts:  import { registerTravelAction } from "./extensions/travel/action.js";
-//          registerTravelAction();
+// OPT-IN: core does not register this by default. Turn it on by name —
+//   KIMI_EXTENSIONS=travel  (it is in the enabled-extensions REGISTRY; the daemon
+// calls its registerActions seam at startup). Equivalent manual wiring, if you are
+// not using the env registry:  registerTravelAction();
 //
 // A sample action shape only: the daemon generates the content (from your
 // persona.md), the Notifier handles delivery — this handler just records it.
@@ -23,6 +24,7 @@ import {
   type ActionContext,
   type ActionResult,
 } from "../../lib/agency.js";
+import type { KimiExtension } from "../../lib/extensions.js";
 
 const TRAVEL = "TRAVEL";
 
@@ -74,3 +76,13 @@ export const travelAction: ActionHandler = {
 export function registerTravelAction(): void {
   registerAction(travelAction);
 }
+
+/**
+ * Opt-in extension wrapper. Enable by name via KIMI_EXTENSIONS=travel (registered
+ * in lib/enabled-extensions.ts). Travel is daemon-side only (no MCP tools), so it
+ * implements the registerActions seam; the daemon wires it at startup.
+ */
+export const travelExtension: KimiExtension = {
+  name: "travel",
+  registerActions: registerTravelAction,
+};

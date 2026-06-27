@@ -8,6 +8,8 @@ import { registerAllTools } from "./tools.js";
 import { loadExtensions } from "./lib/extensions.js";
 import { enabledExtensions } from "./lib/enabled-extensions.js";
 import { errMessage } from "./lib/err.js";
+import prisma from "./db.js";
+import { EventType } from "@prisma/client";
 
 const app = express();
 
@@ -90,6 +92,40 @@ app.get("/mcp", (_req, res) =>
   res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method Not Allowed (stateless /mcp; use POST)" }, id: null }));
 app.delete("/mcp", (_req, res) =>
   res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method Not Allowed (stateless /mcp)" }, id: null }));
+
+// ─── Generic ingest — POST /events ──────────────────────────────────────────
+// A platform-neutral signal sink: any client (a phone shortcut, a Tasker task, a
+// webhook, a cron job, plain curl) POSTs a signal and it lands as one row in the
+// events table — the event-sourcing spine. Behind the same global Bearer auth.
+// Only the "external signal" event kinds are accepted (not the agent-internal
+// ones). See docs/EXTENSIONS.md (§5 Ingest) for how an iOS Shortcut / a calendar / a mailbox map
+// onto this as example clients — none required; curl works.
+const INGEST_KINDS: EventType[] = [EventType.APP_OPEN, EventType.MANUAL_NOTE, EventType.SYSTEM];
+app.post("/events", express.json(), async (req, res) => {
+  try {
+    const { eventType, value, source } = (req.body ?? {}) as {
+      eventType?: string;
+      value?: string;
+      source?: string;
+    };
+    const kind =
+      typeof eventType === "string" && (INGEST_KINDS as string[]).includes(eventType)
+        ? (eventType as EventType)
+        : EventType.MANUAL_NOTE;
+    const ev = await prisma.event.create({
+      data: {
+        eventType: kind,
+        value: typeof value === "string" ? value.slice(0, 2000) : null,
+        source: typeof source === "string" && source.trim() ? source.trim().slice(0, 80) : "ingest",
+      },
+      select: { id: true, createdAt: true },
+    });
+    res.json({ ok: true, id: ev.id, eventType: kind, at: ev.createdAt.toISOString() });
+  } catch (err: unknown) {
+    console.error("/events error:", errMessage(err));
+    if (!res.headersSent) res.status(500).json({ error: "ingest failed" });
+  }
+});
 
 function createMcpServer() {
   const server = new McpServer({ name: "kimi", version: "0.1.0" });

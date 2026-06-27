@@ -37,6 +37,8 @@ KIMI_CORE_URL=http://localhost:3001 KIMI_API_KEY=<与 core 相同> node server.m
 
 记忆 RAG（`memory_search`）和 dashboard 数据（`store`）从此走一个 core。
 
+写自己的扩展、以及外部信号怎么自动喂进来（`POST /events` / `demo-feed`，让房间自己动起来），见 **[docs/EXTENSIONS.md](./EXTENSIONS.md)**。
+
 不想上 core 也行——这是递进的，不是绑定：room 可以单飞（idb / supabase / 本地 prisma，见 room
 的 `docs/SELF-HOST.md`）；manor 可以不跑 core、只用 `DATABASE_URL` 直读同一个 Postgres 的
 `store_rows`（见 manor 的 `STATE-SCHEMA.md`）。

@@ -1,0 +1,171 @@
+> English: ./EXTENSIONS.en.md
+
+# 扩展与摄入（Extensions & Ingest）
+
+core 默认是一个记忆引擎，**不带任何扩展**。需要的能力按名启用：
+
+```bash
+KIMI_EXTENSIONS=store,travel,demo-feed
+```
+
+留空 / 不设 = 全关，引擎与出厂一致。本文前半讲怎么写一个扩展、它怎么接进来；后半（§5）讲外部信号怎么自动流进来，让前端从“被布置好的房间”变成“自己在动的房间”。
+
+---
+
+## 1. 一个 registry，两个 seam
+
+一个扩展是一个 `KimiExtension`（`apps/gateway/src/lib/extensions.ts`）：
+
+```ts
+export interface KimiExtension {
+  name: string;
+  registerTools?: (server: McpServer) => void; // MCP-server 端
+  registerActions?: () => void;                // daemon 端
+}
+```
+
+两个 seam 在**两个不同的进程上下文**里生效：
+
+| seam | 在哪运行 | 谁调用 | 用来做 |
+|------|----------|--------|--------|
+| `registerTools(server)` | MCP server（`index.ts` / `http-server.ts`） | `registerAllTools(server)` 之后 `loadExtensions(server, enabledExtensions())` | 在核心工具旁边挂 MCP 工具 |
+| `registerActions()` | daemon（`daemon.ts`） | 启动时 `loadExtensionActions(enabledExtensions())` | 注册 agency action（`registerAction`）和/或起定时任务（`node-cron`） |
+
+一个扩展可以只实现其一、两个都实现、或都不实现。**默认什么都不加载。**
+
+启用由 env 驱动：`apps/gateway/src/lib/enabled-extensions.ts` 里的 `REGISTRY` 把名字映射到扩展对象，`KIMI_EXTENSIONS` 按名挑选。要加一个新扩展，就在 `REGISTRY` 里登记一行。
+
+---
+
+## 2. 写一个 tool 扩展
+
+以 `store` / `paper` 为例（`apps/gateway/src/extensions/paper/`）。一个 tool 扩展在 `registerTools` 里调 `server.tool(...)`：
+
+```ts
+import type { KimiExtension } from "../../lib/extensions.js";
+
+export const myExtension: KimiExtension = {
+  name: "my-ext",
+  registerTools(server) {
+    server.tool("my_tool", "what it does", { /* zod schema */ }, async (args) => {
+      // ... 读写你自己的表，返回 { content: [{ type: "text", text: JSON.stringify(result) }] }
+    });
+  },
+};
+```
+
+然后在 `enabled-extensions.ts` 的 `REGISTRY` 加 `"my-ext": myExtension`，部署时 `KIMI_EXTENSIONS=my-ext` 即开。
+
+---
+
+## 3. 写一个 daemon 扩展（action / 定时）
+
+daemon 端有两种典型形态，都走 `registerActions`：
+
+**(a) agency action** —— 让 wake 循环可以*选择*的一个动作。以 `travel` 为例（`apps/gateway/src/extensions/travel/action.ts`）：定义一个 `ActionHandler`，在 `registerActions` 里 `registerAction(handler)`。动作选择与分发见 `docs/AUTONOMY.md` 描述的 wake → select → dispatch 环。
+
+**(b) 定时任务** —— 一个按自己时钟跑的后台 job。以 `demo-feed` 为例（`apps/gateway/src/extensions/demo-feed/feed.ts`）：在 `registerActions` 里 `cron.schedule(...)`，每个 tick 写自己的表。
+
+```ts
+import cron from "node-cron";
+import type { KimiExtension } from "../../lib/extensions.js";
+
+function registerMyFeed(): void {
+  cron.schedule(process.env.MY_CRON || "*/5 * * * *", () => {
+    myTick().catch((e) => console.error("[my-feed] tick error:", e?.message || e));
+  });
+}
+
+export const myFeedExtension: KimiExtension = {
+  name: "my-feed",
+  registerActions: registerMyFeed,
+};
+```
+
+同样在 `REGISTRY` 登记，`KIMI_EXTENSIONS=my-feed` 启用。daemon 启动时会替你调 `registerActions()`。
+
+---
+
+## 4. 内置示例一览
+
+| 名字 | seam | 文件 | 是什么 |
+|------|------|------|--------|
+| `store` | tools | `extensions/store/` | 前端 dashboard 数据的结构化 CRUD（`store` / `state_snapshot`） |
+| `paper` | tools | `extensions/paper/` | 一个领域工具示例：学术笔记 `paper_write` / `paper_search` |
+| `travel` | actions | `extensions/travel/action.ts` | 一个 agency action 示例：把 wake 这 tick 生成的内容记成 EPISODE |
+| `demo-feed` | actions | `extensions/demo-feed/feed.ts` | 一个定时任务示例：模拟外部信号源喂表，让 room 自己动起来（见 §5） |
+
+写完一个扩展，记得它默认关着：不进 `KIMI_EXTENSIONS` 就不加载，核心引擎一行不变。
+
+---
+
+## 5. 摄入（Ingest）—— 外部信号怎么进来
+
+dashboard 之所以“活”，不是因为有人手动填，而是因为外部信号**持续地、自动地**流进两张表，再被前端读出来：
+
+- **`events`** —— 事件溯源脊柱：一条信号一行（开了个 app、记了条 note、收到封要紧的邮件……）。
+- **`pwa_kv`** —— 前端 KV 状态桥：`namespace` / `key` / `payload`，给前端按需读（如日历）。
+
+core 给的是一个**平台中立**的摄入端点 + 一个**可跑的模拟**（就是上面的 `demo-feed` 扩展）；至于信号从哪来（手机、日历、邮箱），是**可替换的 recipe**，不是必需。
+
+### 5.1 数据流
+
+```
+  [任意客户端]                         ┌─────────── core ───────────┐
+  手机快捷指令 / Tasker / webhook       │                            │
+  / cron / curl ──── POST /events ───▶ │  events (脊柱)             │
+                                       │                            │      store /
+  你的日历 ──── 定时同步 ──────────────▶ │  pwa_kv (前端 KV)   ──────▶ │  state_snapshot ──▶ room dashboard
+                                       │                            │      (MCP 工具)
+  你的邮箱 ──── 定时拉取 ──────────────▶ │  events / store_rows       │
+                                       └────────────────────────────┘
+```
+
+读出端（`store` / `state_snapshot` 工具）见 `docs/ONE-ENGINE.md`。
+
+### 5.2 通用端点 `POST /events`
+
+任何能发 HTTP 的东西都能喂它。走全局 Bearer 鉴权，落一行 `events`：
+
+```bash
+curl -X POST "$KIMI_URL/events" \
+  -H "Authorization: Bearer $KIMI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"eventType":"APP_OPEN","value":"opened the reader","source":"my-phone"}'
+# → {"ok":true,"id":"…","eventType":"APP_OPEN","at":"…"}
+```
+
+只接受“外部信号”这几类：`APP_OPEN` / `MANUAL_NOTE` / `SYSTEM`（其余是引擎内部事件，不开放摄入）。`source` 随你标。curl 能跑，就什么客户端都能跑。
+
+### 5.3 看它自己动起来：`demo-feed`
+
+不想接任何真实源，也能现场演示。`demo-feed` 扩展（`extensions/demo-feed/feed.ts`）按定时把**虚构**信号写进 `events` 脊柱 + room 渲染的 collection（calendar / keepsake / chat）：
+
+```bash
+# 1) core 开 store + demo-feed
+KIMI_EXTENSIONS=store,demo-feed   # 可选 DEMO_FEED_CRON，默认每 2 分钟
+# 2) room 指向这个 core
+NEXT_PUBLIC_KIMI_BACKEND=core
+NEXT_PUBLIC_KIMI_ADAPTER=core
+```
+
+然后打开 room：日历 / keepsake / 聊天会**自己冒出新条目**，没人手动。内容全是虚构示例（明确标 `虚构 / fictional`）。这就是上面那套流转的可跑缩影 —— 真实的源喂的是同样的表，`demo-feed` 只是替它们用假数据站个位。
+
+### 5.4 接你自己的源（recipe，都可替换）
+
+下面是“我这边怎么接的”，**只是示例，不是必需**，也不是内置工作代码。挑一个适合你平台的就行。
+
+**手机快捷指令** —— iPhone 用 Shortcuts 的「获取 URL 内容」对 `POST /events` 发一包 JSON（app 名、地点、一句话）。**很多人不是 iPhone**：Android 的「快捷指令」/ Tasker / 任意能发 HTTP 的自动化都一样，端点不变。
+
+**日历** —— 写个定时脚本把你日历里近 N 天的事件同步成 `pwa_kv[calendar]`（或 `store_rows` 的 `calendar` collection）行，前端就能显示。源是 Google 日历还是本地日历、还是别的，无所谓 —— 同步进同一张表即可。
+
+**邮箱** —— 定时拉信，把要紧的写成 `events` 行（`source` 标账户）。任意 IMAP / 邮箱都行，不锁定某家。
+
+> 说明（诚实标注）：公开核把 `EventType` enum 精简到了 8 类，`EMAIL_ARRIVAL` / `LOCATION` 这些专用类型没保留 —— 上面的邮箱 / 地点 recipe 用 `MANUAL_NOTE` 或 `SYSTEM` + `source` 标注即可。日历 / 邮箱的同步是 recipe，不是内置；`demo-feed` 与 `POST /events` 才是开箱能跑的部分。
+
+### 5.5 两张表的角色
+
+- **`events`** = 事件溯源脊柱。append-only 的信号流，是 reentry / 自主层 / 各种 dashboard 的共同底料。
+- **`pwa_kv`** = 前端 KV 桥。一张 `namespace`/`key`/`payload` 表装所有前端状态，加新前端面不用迁移 schema。
+
+两者都在公开 schema 里（`packages/db/prisma/schema.prisma`）。把外部信号接进这两张表，dashboard 就从“被布置好的房间”变成“自己在动的房间”。

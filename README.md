@@ -173,7 +173,7 @@ agent 在一段对话里按这三个 MCP 工具走完整个生命周期：
 
 **可选扩展 · store** —— 给前端 surface（kimi-room / kimi-manor）的结构化数据 store：`store`（`store_rows` 上的 CRUD —— 日历 / 睡眠 / 纪念等，按 `collection` 分）+ `state_snapshot`（仪表盘只读快照）。返回 JSON 而非 agent-text，与 memory 引擎分离，让一个前端能把同一个 core 当唯一后端用。
 
-扩展默认全关。用 `KIMI_EXTENSIONS=store`（逗号分隔，如 `store,paper`）按名启用，或在 `registerAllTools(server)` 之后手动 `loadExtensions(server, [storeExtension])`。
+扩展默认全关。用 `KIMI_EXTENSIONS=store`（逗号分隔，如 `store,travel`）按名启用 —— 同一个 env 既管 tool 扩展（`store` / `paper`）也管 daemon 扩展（`travel` / `demo-feed`）。怎么写扩展、外部信号怎么自动流进来（`POST /events` / `demo-feed`），见 **[docs/EXTENSIONS.md](./docs/EXTENSIONS.md)**。
 
 ## 可配置项
 

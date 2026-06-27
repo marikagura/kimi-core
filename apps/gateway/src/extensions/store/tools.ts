@@ -209,7 +209,7 @@ export function registerStoreTools(server: McpServer): void {
 
   server.tool(
     "state_snapshot",
-    "Read-only composed snapshot for a dashboard surface (e.g. kimi-manor): core profile, active states, topics, recent episodes, an active-memory count, and the full store_rows grouped by collection. Returns NEUTRAL structured JSON — the surface maps it to its own render shape. The same cold-start exclusion as reentry applies (ships neutral / no exclusions in the open core).",
+    "Read-only composed snapshot for a dashboard surface (e.g. kimi-manor): core profile, active states, topics, recent episodes, recentMemories (30 newest, all types except RESTRICTED — for a review surface), open `pending` items (the review queue), an active-memory count, and the full store_rows grouped by collection. Returns NEUTRAL structured JSON — the surface maps it to its own render shape. The same cold-start exclusion as reentry applies (ships neutral / no exclusions in the open core).",
     {},
     async () => {
       try {
@@ -249,6 +249,40 @@ export function registerStoreTools(server: McpServer): void {
             createdAt: m.createdAt.toISOString(),
           }));
         const memoryActive = await prisma.memory.count({ where: { isActive: true } });
+        // recent memories for a review surface — all types except RESTRICTED, by recency
+        // (includes deactivated, so a review UI can show what was closed).
+        const recentMemoriesRaw = await prisma.memory.findMany({
+          where: { memoryType: { not: "RESTRICTED" } },
+          orderBy: { createdAt: "desc" },
+          take: 30,
+          select: { id: true, memoryType: true, title: true, summary: true, content: true, importance: true, isActive: true, createdAt: true },
+        });
+        const recentMemories = recentMemoriesRaw.map((m) => ({
+          id: m.id,
+          memoryType: m.memoryType,
+          title: m.title,
+          summary: m.summary,
+          content: m.content,
+          importance: m.importance,
+          isActive: m.isActive,
+          createdAt: m.createdAt.toISOString(),
+        }));
+        // open pending items (the review queue) — all OPEN, priority then recency.
+        const pendingRaw = await prisma.pendingItem.findMany({
+          where: { status: "OPEN" },
+          orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+          take: 200,
+          select: { id: true, pendingType: true, title: true, content: true, proposedAction: true, priority: true, createdAt: true },
+        });
+        const pending = pendingRaw.map((pi) => ({
+          id: pi.id,
+          pendingType: pi.pendingType,
+          title: pi.title,
+          content: pi.content,
+          proposedAction: pi.proposedAction,
+          priority: pi.priority,
+          createdAt: pi.createdAt.toISOString(),
+        }));
         const storeRows = await prisma.storeRow.findMany();
         const store = rowsToExport(
           storeRows.map((r) => ({
@@ -265,6 +299,8 @@ export function registerStoreTools(server: McpServer): void {
           states,
           topics,
           recentEpisodes,
+          recentMemories,
+          pending,
           memoryStats: { active: memoryActive },
           store,
         };

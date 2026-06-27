@@ -1,6 +1,6 @@
 // ============================================================================
 // Memory domain tool registry.
-// memory_write / memory_reopen / memory_search / memory_search_safe /
+// memory_write / memory_edit / memory_reopen / memory_search / memory_search_safe /
 // memory_read / graph_walk / memory_close
 // ============================================================================
 
@@ -426,6 +426,68 @@ export function registerMemoryTools(server: McpServer) {
           },
         ],
       };
+    },
+  );
+
+  server.tool(
+    "memory_edit",
+    "Edit the content fields of one existing memory (title / summary / content / importance) by id — only the fields you pass change. USER-GATED: call this ONLY when the user has explicitly asked to change a specific memory. Never autonomously rewrite a recorded memory — an edit overwrites history. `authorization` must quote the user's instruction that asked for the edit. (Not in the autonomous daemon's read-only allowlist, so it can only run with a human in the loop.)",
+    {
+      id: z.string().describe("Memory id to edit"),
+      authorization: z
+        .string()
+        .describe("The user's explicit instruction that asked for this edit — quote them. Required: edits are user-gated; do not edit a memory the user did not ask you to change."),
+      title: z.string().optional().describe("New title (omit to keep)"),
+      summary: z.string().optional().describe("New summary, <=300 chars (omit to keep)"),
+      content: z.string().optional().describe("New content (omit to keep)"),
+      importance: z.number().min(1).max(5).optional().describe("New importance 1-5 (omit to keep)"),
+    },
+    async ({ id, authorization, title, summary, content, importance }) => {
+      if (!authorization || !authorization.trim()) {
+        return {
+          content: [{ type: "text" as const, text: "authorization required: memory_edit is user-gated — pass the user's instruction that asked for this edit." }],
+          isError: true,
+        };
+      }
+      const existing = await prisma.memory.findUnique({
+        where: { id },
+        select: { id: true, title: true, summary: true, content: true },
+      });
+      if (!existing) {
+        return { content: [{ type: "text", text: `Memory ${id} not found.` }] };
+      }
+      const data: { title?: string; summary?: string; content?: string; importance?: number } = {};
+      if (title !== undefined) data.title = title;
+      if (summary !== undefined) data.summary = summary;
+      if (content !== undefined) data.content = content;
+      if (importance !== undefined) data.importance = importance;
+      if (Object.keys(data).length === 0) {
+        return { content: [{ type: "text", text: "Nothing to edit — pass at least one of title / summary / content / importance." }] };
+      }
+      await prisma.memory.update({ where: { id }, data });
+
+      // Re-index the embedding when a text field changed, or search goes stale.
+      if (title !== undefined || summary !== undefined || content !== undefined) {
+        const newTitle = title ?? existing.title;
+        const newSummary = summary ?? existing.summary;
+        const newContent = content ?? existing.content;
+        await indexNewMemory(id, `${newTitle}\n${newSummary || newContent}`, { logTag: "memory_edit" });
+      }
+
+      // Audit breadcrumb — which fields changed + the user authorization that gated it.
+      try {
+        await prisma.event.create({
+          data: {
+            eventType: "SYSTEM",
+            source: "memory_edit",
+            value: JSON.stringify({ id, fields: Object.keys(data), authorization: authorization.slice(0, 300) }),
+          },
+        });
+      } catch (e: unknown) {
+        console.warn("[memory_edit] breadcrumb event failed:", errMessage(e));
+      }
+
+      return { content: [{ type: "text", text: `Edited memory ${id} — changed ${Object.keys(data).join(", ")}.` }] };
     },
   );
 }

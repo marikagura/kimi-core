@@ -91,7 +91,7 @@ export const myFeedExtension: KimiExtension = {
 | 名字 | seam | 文件 | 是什么 |
 |------|------|------|--------|
 | `store` | tools | `extensions/store/` | 前端 dashboard 数据的结构化 CRUD（`store` / `state_snapshot`） |
-| `paper` | tools | `extensions/paper/` | 一个领域工具示例：学术笔记 `paper_write` / `paper_search` |
+| `paper` | tools + actions | `extensions/paper/` | 学术笔记 `paper_search` / `paper_write` / `paper_list` + 可选 `PAPER_LOOP_CRON` 定时 digest（端到端见 §6） |
 | `travel` | actions | `extensions/travel/action.ts` | 一个 agency action 示例：把 wake 这 tick 生成的内容记成 EPISODE |
 | `demo-feed` | actions | `extensions/demo-feed/feed.ts` | 一个定时任务示例：模拟外部信号源喂表，让 room 自己动起来（见 §5） |
 
@@ -169,3 +169,15 @@ NEXT_PUBLIC_KIMI_ADAPTER=core
 - **`pwa_kv`** = 前端 KV 桥。一张 `namespace`/`key`/`payload` 表装所有前端状态，加新前端面不用迁移 schema。
 
 两者都在公开 schema 里（`packages/db/prisma/schema.prisma`）。把外部信号接进这两张表，dashboard 就从“被布置好的房间”变成“自己在动的房间”。
+
+---
+
+## 6. 一个端到端的例子：论文 → 房间
+
+`paper` 扩展把上面两个 seam 用在一处，是「自动 digest + 前端美化」的完整样例：
+
+- **自动 digest（actions）**：设了 `PAPER_LOOP_CRON` 时，`registerActions` 在 daemon 里按 cron 跑 `runPaperLoop()` —— 从一个 `SourceAdapter`（默认 PubMed，可换 arXiv / 任意源）拉近期论文，LLM 蒸成一句知识点，写进 `paper_notes`（按 externalId 去重）。不设 cron 就只挂工具、不自动爬；手动 `npm run paper:loop` 照常。
+- **结构化读（tools）**：`paper_list` 返回 JSON（不是 RAG 文本），给前端按 importance / pinned / 月份渲染；`paper_search` 仍是给 agent 的文本检索。
+- **房间美化**：kimi-room 的 `/room/study/papers` 在 core 模式下调 `paper_list` 读 `paper_notes`，离线 / 未接 core 时用一批虚构 demo 论文，所以页面开箱即好看（深色巴洛克 + 衬线 + 描金）。
+
+启用：`KIMI_EXTENSIONS=paper` + 可选 `PAPER_LOOP_CRON="0 9 * * *"`；room 设 `NEXT_PUBLIC_KIMI_ADAPTER=core`。

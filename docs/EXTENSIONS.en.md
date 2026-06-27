@@ -91,7 +91,7 @@ Register it in `REGISTRY` the same way; enable with `KIMI_EXTENSIONS=my-feed`. T
 | name | seam | file | what it is |
 |------|------|------|------------|
 | `store` | tools | `extensions/store/` | structured CRUD for front-end dashboard data (`store` / `state_snapshot`) |
-| `paper` | tools | `extensions/paper/` | a domain-tool example: academic notes `paper_write` / `paper_search` |
+| `paper` | tools + actions | `extensions/paper/` | academic notes `paper_search` / `paper_write` / `paper_list` + optional `PAPER_LOOP_CRON` scheduled digest (end-to-end in §6) |
 | `travel` | actions | `extensions/travel/action.ts` | an agency-action example: record what the wake generated this tick as an EPISODE |
 | `demo-feed` | actions | `extensions/demo-feed/feed.ts` | a scheduled-job example: simulate an external source feeding the tables so the room moves on its own (see §5) |
 
@@ -169,3 +169,15 @@ The following is "how I happen to wire mine" — **examples, not requirements**,
 - **`pwa_kv`** = the front-end KV bridge. One `namespace`/`key`/`payload` table holds all front-end state, so adding a new surface needs no schema migration.
 
 Both live in the public schema (`packages/db/prisma/schema.prisma`). Wire external signals into these two tables and the dashboard goes from "a furnished room" to "a room that moves on its own".
+
+---
+
+## 6. A worked end-to-end example: papers → room
+
+The `paper` extension uses both seams in one place — a complete sample of "auto-digest + a beautiful front-end":
+
+- **Auto-digest (actions)**: when `PAPER_LOOP_CRON` is set, `registerActions` runs `runPaperLoop()` on that cron in the daemon — it pulls recent papers from a `SourceAdapter` (PubMed by default; swap in arXiv / any source), distills each into a one-line knowledge point with the LLM, and writes to `paper_notes` (deduped by externalId). Unset → tools only, no crawl; the manual `npm run paper:loop` still works.
+- **Structured read (tools)**: `paper_list` returns JSON (not RAG text) so a front-end can render by importance / pinned / month; `paper_search` stays as agent-text retrieval.
+- **The room**: kimi-room's `/room/study/papers` calls `paper_list` to read `paper_notes` in core mode, and falls back to a fictional demo set offline — so the page is beautiful out of the box (dark baroque + serif + gilt).
+
+Enable: `KIMI_EXTENSIONS=paper` + optional `PAPER_LOOP_CRON="0 9 * * *"`; set `NEXT_PUBLIC_KIMI_ADAPTER=core` in the room.

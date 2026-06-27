@@ -25,6 +25,7 @@
     "eval:history": "tsx apps/gateway/src/eval/history.ts",
     "lint": "eslint .",
     "paper:loop": "tsx apps/gateway/src/extensions/paper/loop.ts",
+    "weekly:arc": "tsx apps/gateway/src/extensions/weekly-arc/weekly-arc.ts",
     "test": "vitest run"
   },
   "devDependencies": {

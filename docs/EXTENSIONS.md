@@ -94,6 +94,7 @@ export const myFeedExtension: KimiExtension = {
 | `paper` | tools + actions | `extensions/paper/` | 学术笔记 `paper_search` / `paper_write` / `paper_list` + 可选 `PAPER_LOOP_CRON` 定时 digest（端到端见 §6） |
 | `travel` | actions | `extensions/travel/action.ts` | 一个 agency action 示例：把 wake 这 tick 生成的内容记成 EPISODE |
 | `demo-feed` | actions | `extensions/demo-feed/feed.ts` | 一个定时任务示例：模拟外部信号源喂表，让 room 自己动起来（见 §5） |
+| `weekly-arc` | actions | `extensions/weekly-arc/` | 一个定时任务示例：把一周的 memory（episodes / 自评曲线 / 状态变化 / dreams）卷成一段叙事 arc，写回成一条 SHARED EPISODE（`WEEKLY_ARC_CRON`；arc 的声音 = 你的 persona（`persona.md`）+ 一个 flat demo scaffold——出厂中性、不带任何人的口吻，要填 persona + 自己改才成你的） |
 
 写完一个扩展，记得它默认关着：不进 `KIMI_EXTENSIONS` 就不加载，核心引擎一行不变。
 

@@ -13,12 +13,14 @@ import { storeExtension } from "../extensions/store/index.js";
 import { paperExtension } from "../extensions/paper/index.js";
 import { travelExtension } from "../extensions/travel/action.js";
 import { demoFeedExtension } from "../extensions/demo-feed/feed.js";
+import { weeklyArcExtension } from "../extensions/weekly-arc/index.js";
 
 const REGISTRY: Record<string, KimiExtension> = {
   store: storeExtension,
   paper: paperExtension,
   travel: travelExtension,
   "demo-feed": demoFeedExtension,
+  "weekly-arc": weeklyArcExtension,
 };
 
 export function enabledExtensions(): KimiExtension[] {

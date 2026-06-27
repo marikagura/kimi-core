@@ -20,10 +20,11 @@ describe("unified opt-in", () => {
 
   it("enabledExtensions resolves travel + demo-feed by name; empty env → none", async () => {
     const { enabledExtensions } = await import("./enabled-extensions.js");
-    process.env.KIMI_EXTENSIONS = "travel,demo-feed";
+    process.env.KIMI_EXTENSIONS = "travel,demo-feed,weekly-arc";
     const names = enabledExtensions().map((e) => e.name);
     expect(names).toContain("travel");
     expect(names).toContain("demo-feed");
+    expect(names).toContain("weekly-arc");
     // every resolved extension exposes at least one seam
     for (const ext of enabledExtensions()) {
       expect(Boolean(ext.registerTools) || Boolean(ext.registerActions)).toBe(true);

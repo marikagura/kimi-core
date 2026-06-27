@@ -94,6 +94,7 @@ Register it in `REGISTRY` the same way; enable with `KIMI_EXTENSIONS=my-feed`. T
 | `paper` | tools + actions | `extensions/paper/` | academic notes `paper_search` / `paper_write` / `paper_list` + optional `PAPER_LOOP_CRON` scheduled digest (end-to-end in §6) |
 | `travel` | actions | `extensions/travel/action.ts` | an agency-action example: record what the wake generated this tick as an EPISODE |
 | `demo-feed` | actions | `extensions/demo-feed/feed.ts` | a scheduled-job example: simulate an external source feeding the tables so the room moves on its own (see §5) |
+| `weekly-arc` | actions | `extensions/weekly-arc/` | a scheduled-job example: roll the week's memories (episodes / self-score curve / state changes / dreams) into a narrative arc, written back as one SHARED EPISODE (`WEEKLY_ARC_CRON`; the voice = your persona (`persona.md`) + a flat demo scaffold — ships neutral with no one's register; supply a persona + edit it to make it yours) |
 
 When you write an extension, remember it ships off: not in `KIMI_EXTENSIONS` → not loaded, and the core engine is unchanged.
 

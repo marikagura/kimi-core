@@ -358,22 +358,30 @@ export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: 
     source,
     ...(sinceTs ? { createdAt: { gte: sinceTs } } : {}),
     // threadId lives inside the JSON value (no schema column) → coarse `contains`
-    // pre-filter; the exact match is re-checked after parse below.
-    ...(threadId ? { value: { contains: `"threadId":"${threadId}"` } } : {}),
+    // pre-filter; the exact match is re-checked after parse below. Build the needle
+    // from the SAME JSON encoder used to store it (sources.ts JSON.stringify), so a
+    // threadId containing a quote/backslash matches its escaped on-disk form instead
+    // of silently returning zero rows (the post-parse guard still narrows exactly).
+    ...(threadId ? { value: { contains: `"threadId":${JSON.stringify(threadId)}` } } : {}),
   });
   const fetchTake = sinceTs ? 1500 : take; // anchored mode pulls up to the cap; the caller trims by token budget
   const [tg, web] = await Promise.all([
-    prisma.event.findMany({ where: whereFor(CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { value: true, createdAt: true } }),
-    prisma.event.findMany({ where: whereFor(CROSS_CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { value: true, createdAt: true } }),
+    prisma.event.findMany({ where: whereFor(CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { id: true, value: true, createdAt: true } }),
+    prisma.event.findMany({ where: whereFor(CROSS_CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { id: true, value: true, createdAt: true } }),
   ]);
-  const parse = (rows: { value: string | null; createdAt: Date }[], surface: "tg" | "chat"): MergedChatMsg[] =>
+  const parse = (rows: { id: string; value: string | null; createdAt: Date }[], surface: "tg" | "chat"): (MergedChatMsg & { id: string })[] =>
     rows.flatMap((r) => {
       const p = parseChatEvent(r.value);
       if (!p) return [];
       if (threadId && p.threadId !== threadId) return []; // exact-match guard over the coarse filter
-      return [{ role: p.role, text: p.text, surface, at: r.createdAt, threadId: p.threadId }];
+      return [{ id: r.id, role: p.role, text: p.text, surface, at: r.createdAt, threadId: p.threadId }];
     });
-  const merged = [...parse(tg, "tg"), ...parse(web, "chat")].sort((a, b) => a.at.getTime() - b.at.getTime());
+  // Secondary sort on event id breaks same-millisecond ties deterministically — the
+  // cross-device contention case, where two surfaces write within one ms and a
+  // createdAt-only sort left the order to concat/sort stability (always tg-before-chat).
+  const merged = [...parse(tg, "tg"), ...parse(web, "chat")]
+    .sort((a, b) => a.at.getTime() - b.at.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map(({ id: _id, ...m }) => m);
   return sinceTs ? merged : merged.slice(-take);
 }
 

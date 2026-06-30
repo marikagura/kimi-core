@@ -5,6 +5,7 @@
 // It only owns the rows it created (source="derive"). Legacy hand-set rows
 // (source!=derive) are left alone.
 
+import { Prisma } from "@prisma/client";
 import prisma from "../db.js";
 import { numEnv } from "./env.js";
 import { driveBoostByDim } from "./thought-pool.js";
@@ -277,7 +278,19 @@ export async function sweepConcerns(
     if (!dryRun) {
       const ids = mems.map((m) => m.id);
       if (verdict === "resolved") {
-        const r = await prisma.memory.updateMany({ where: { id: { in: ids } }, data: { resolution: "RESOLVED" } });
+        // Resolve the WHOLE concernKey, not just the windowed ids. The sweep only
+        // sees the top SWEEP_TAKE rows across ALL keys, so an over-backed concern can
+        // have older same-key rows fall outside the window; flipping only the
+        // windowed ids would leave those OPEN/EASING, and deriveConcerns (no take
+        // cap) would re-derive the concern even though the verdict closed it. When
+        // the group is a real concernKey, resolve by key; otherwise (topicId /
+        // nothread group) fall back to the windowed ids.
+        const groupConcernKey = mems[0].concernKey;
+        const where: Prisma.MemoryWhereInput =
+          groupConcernKey && mems.every((m) => m.concernKey === groupConcernKey)
+            ? { experiencer: "SELF", concernKey: groupConcernKey, resolution: { in: ["OPEN", "EASING"] }, isActive: true }
+            : { id: { in: ids } };
+        const r = await prisma.memory.updateMany({ where, data: { resolution: "RESOLVED" } });
         applied = r.count > 0;
         console.log(`[self-sweep] resolved "${key}": ${evidenceNote}`);
       } else if (verdict === "active") {

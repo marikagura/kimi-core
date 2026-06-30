@@ -27,6 +27,7 @@ model CoreProfile {
   // hybrid scorer as memories (public surfaces gate exposure separately).
   embedding   Unsupported("vector(1536)")?
   embeddingAt DateTime?
+  embedModel  String? // model that produced `embedding`; a swap re-arms the sweep. See Memory.
 
   @@map("core_profile")
 }
@@ -146,6 +147,11 @@ model Memory {
   // accessed via $queryRaw. Declared so `db push` keeps them instead of dropping.
   embedding       Unsupported("vector(1536)")?
   embeddingAt     DateTime?
+  // The model that produced `embedding`. The dim guard can't see a same-dimension
+  // model swap (e.g. ada-002 → 3-small, both 1536-dim) — different vector spaces,
+  // so cosine similarity across them is meaningless. Stamped on every write; the
+  // sweep re-embeds a row whose stamped model differs from the current EMBED_MODEL.
+  embedModel      String?
   // Continuous bidirectional emotion.
   valence         Float? // -1 to 1
   arousal         Float? // 0 to 1
@@ -204,6 +210,11 @@ model Event {
   @@index([eventType, source, createdAt])
   @@index([createdAt])
   @@index([dedupeKey])
+  // Idempotency for chat-sync writes: a client-supplied dedupeKey makes a retried
+  // send a no-op instead of a duplicate row. Postgres treats NULL as distinct, so
+  // rows without a dedupeKey (the default) are unconstrained; only non-null
+  // (eventType, dedupeKey) pairs must be unique.
+  @@unique([eventType, dedupeKey])
   @@map("events")
 }
 
@@ -229,6 +240,7 @@ model Observation {
   // hybrid scorer as memories instead of being invisible to search.
   embedding   Unsupported("vector(1536)")?
   embeddingAt DateTime?
+  embedModel  String? // model that produced `embedding`; a swap re-arms the sweep. See Memory.
 
   @@map("observations")
 }
@@ -304,6 +316,11 @@ model Link {
   // Traversal indexes: self-joins scan by (fromType, fromId) or (toType, toId).
   @@index([fromType, fromId, relationType])
   @@index([toType, toId])
+  // Structural edge idempotency: the natural key is unique, so the SELECT-then-
+  // INSERT in entity-mentions / memory-index / memory-similarity can no longer
+  // double-write the same edge under a concurrent indexer + sweep race. Writers
+  // upsert on this key.
+  @@unique([fromType, fromId, toType, toId, relationType])
   @@map("links")
 }
 

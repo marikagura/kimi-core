@@ -71,24 +71,35 @@ export function extractEntityTokens(entityName: string): string[] {
   return [...tokens];
 }
 
-// Insert (entity, memory, "mentions") edge if it doesn't already exist. We
-// avoid Prisma's link.upsert because there's no unique index on the natural
-// key — relying on a SELECT-then-INSERT keeps the schema unconstrained while
-// still being idempotent for sweep / backfill callers.
+// Insert (entity, memory, "mentions") edge if it doesn't already exist. Upserts on
+// the Link natural-key unique index so a concurrent indexer + sweep can't double-
+// write the same edge (the old SELECT-then-INSERT raced). Returns true only when a
+// new edge was created (an existing edge is a no-op update).
 async function upsertMentionEdge(entityId: string, memoryId: string): Promise<boolean> {
-  const existing = await prisma.link.findFirst({
+  const existing = await prisma.link.findUnique({
     where: {
-      fromType: "entity",
-      fromId: entityId,
-      toType: "memory",
-      toId: memoryId,
-      relationType: "mentions",
+      fromType_fromId_toType_toId_relationType: {
+        fromType: "entity",
+        fromId: entityId,
+        toType: "memory",
+        toId: memoryId,
+        relationType: "mentions",
+      },
     },
     select: { id: true },
   });
   if (existing) return false;
-  await prisma.link.create({
-    data: {
+  await prisma.link.upsert({
+    where: {
+      fromType_fromId_toType_toId_relationType: {
+        fromType: "entity",
+        fromId: entityId,
+        toType: "memory",
+        toId: memoryId,
+        relationType: "mentions",
+      },
+    },
+    create: {
       fromType: "entity",
       fromId: entityId,
       toType: "memory",
@@ -97,6 +108,7 @@ async function upsertMentionEdge(entityId: string, memoryId: string): Promise<bo
       weight: 1.0,
       confidence: 0.9,
     },
+    update: {},
   });
   return true;
 }
@@ -164,7 +176,17 @@ export async function findMentionedEntities(memoryText: string): Promise<string[
 // Sweep one memory: find mentioned entities, write missing edges. Returns
 // the number of edges newly created (0 on a re-run for unchanged memory).
 // Idempotent — backfill loops can call repeatedly without doubling rows.
-export async function sweepMemoryMentions(memoryId: string): Promise<number> {
+//
+// reconcile (default false): also DELETE stale mention edges whose entity is no
+// longer mentioned in the current text. The sweep is add-only by default so pure
+// backfill callers never drop edges; the edit path passes reconcile:true because an
+// edit that removes a person's name must drop that entity→memory mention edge —
+// otherwise memory_search's entity-hit path keeps returning the memory for the
+// removed entity (a correctness regression specific to edit).
+export async function sweepMemoryMentions(
+  memoryId: string,
+  opts: { reconcile?: boolean } = {},
+): Promise<number> {
   const m = await prisma.memory.findUnique({
     where: { id: memoryId },
     select: { title: true, summary: true, content: true, isActive: true },
@@ -172,6 +194,18 @@ export async function sweepMemoryMentions(memoryId: string): Promise<number> {
   if (!m || !m.isActive) return 0;
   const text = [m.title, m.summary ?? "", m.content].join("\n");
   const entityIds = await findMentionedEntities(text);
+  if (opts.reconcile) {
+    // Drop mention edges to entities no longer in the text. NOT-in [] is a no-op,
+    // so an edit that removed every entity correctly clears all mention edges.
+    await prisma.link.deleteMany({
+      where: {
+        toType: "memory",
+        toId: memoryId,
+        relationType: "mentions",
+        NOT: { fromId: { in: entityIds } },
+      },
+    });
+  }
   let created = 0;
   for (const eid of entityIds) {
     if (await upsertMentionEdge(eid, memoryId)) created++;

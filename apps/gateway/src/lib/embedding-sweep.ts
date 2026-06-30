@@ -4,7 +4,7 @@
 
 import { Prisma } from "@prisma/client";
 import prisma from "../db.js";
-import { embedAndStore, STALE_EMBEDDING_WHERE, type EmbeddableTable } from "./embed.js";
+import { embedAndStore, staleEmbeddingWhere, type EmbeddableTable } from "./embed.js";
 
 // Sweep rows whose embedding is missing or stale (STALE_EMBEDDING_WHERE: NULL —
 // newly written / cleared — or content edited after creation with the embedding
@@ -38,7 +38,7 @@ export async function sweepTable(cfg: (typeof SWEEP_TABLES)[number]): Promise<{ 
     : Prisma.raw("id, title, content");
   const rows: any[] = await prisma.$queryRaw(Prisma.sql`
     SELECT ${cols} FROM ${Prisma.raw(cfg.table)}
-    WHERE "isActive" = true AND (${STALE_EMBEDDING_WHERE})
+    WHERE "isActive" = true AND (${staleEmbeddingWhere()})
     LIMIT ${cfg.limit}
   `);
   let patched = 0;

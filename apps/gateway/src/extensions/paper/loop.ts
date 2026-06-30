@@ -33,28 +33,37 @@ async function distill(hit: PaperHit): Promise<string> {
 export async function runPaperLoop(): Promise<void> {
   const hits = await source.fetchRecent();
   console.log(`[paper:loop] ${source.name}: ${hits.length} hits`);
-  let written = 0, skipped = 0;
+  let written = 0, skipped = 0, failed = 0;
   for (const hit of hits) {
-    if (hit.externalId) {
-      const existing = await prisma.paperNote.findUnique({ where: { externalId: hit.externalId }, select: { id: true } });
-      if (existing) { skipped++; continue; }
+    // Per-hit isolation (like intel.ts digestTick's created/skipped/failed): a single
+    // distill()/create() rejection — LLM non-ok after retries, a unique-constraint
+    // race on externalId, a transient DB error — must not abort the whole batch and
+    // silently drop the remaining hits until the next cron tick.
+    try {
+      if (hit.externalId) {
+        const existing = await prisma.paperNote.findUnique({ where: { externalId: hit.externalId }, select: { id: true } });
+        if (existing) { skipped++; continue; }
+      }
+      const knowledge = await distill(hit);
+      await prisma.paperNote.create({
+        data: {
+          externalId: hit.externalId,
+          title: hit.title,
+          journal: hit.journal,
+          authors: hit.authors,
+          url: hit.url,
+          publishedAt: hit.publishedAt ? new Date(hit.publishedAt) : undefined,
+          knowledge,
+        },
+      });
+      written++;
+      console.log(`[paper:loop] wrote: ${hit.title.slice(0, 60)}`);
+    } catch (e: unknown) {
+      failed++;
+      console.error(`[paper:loop] hit failed (${hit.externalId ?? "no-id"}): ${errMessage(e)}`);
     }
-    const knowledge = await distill(hit);
-    await prisma.paperNote.create({
-      data: {
-        externalId: hit.externalId,
-        title: hit.title,
-        journal: hit.journal,
-        authors: hit.authors,
-        url: hit.url,
-        publishedAt: hit.publishedAt ? new Date(hit.publishedAt) : undefined,
-        knowledge,
-      },
-    });
-    written++;
-    console.log(`[paper:loop] wrote: ${hit.title.slice(0, 60)}`);
   }
-  console.log(`[paper:loop] done — ${written} written, ${skipped} already stored`);
+  console.log(`[paper:loop] done — ${written} written, ${skipped} already stored, ${failed} failed`);
 }
 
 // CLI entry — only when run directly (not when imported by the extension).

@@ -36,6 +36,20 @@ export function parseChatEvent(
   }
 }
 
+// Validate a write-boundary threadId to a safe charset + length. The read-side
+// coarse pre-filter searches for the threadId inside the JSON value; an unbounded /
+// arbitrary-character threadId (e.g. derived from a title or URL) risks pathological
+// filters and oversized keys. Returns null when absent; throws on a malformed value
+// so the caller can reject the write (400) rather than store an unreadable thread.
+const THREAD_ID_RE = /^[A-Za-z0-9._-]+$/;
+export function validateThreadId(threadId: unknown): string | null {
+  if (threadId == null || threadId === "") return null;
+  if (typeof threadId !== "string" || threadId.length > 128 || !THREAD_ID_RE.test(threadId)) {
+    throw new Error("threadId must be 1-128 chars of [A-Za-z0-9._-]");
+  }
+  return threadId;
+}
+
 // Encode a CHAT event.value from a role + text — the counterpart to parseChatEvent.
 // One definition so every writer (POST /chat, the chat_write tool) stores the SAME
 // shape that parseChatEvent / loadMergedChat read.

@@ -19,6 +19,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "../db.js";
 import { embedText, toVectorLiteral } from "./embed.js";
 import { rerankCandidates } from "./reranker.js";
+import { numEnv } from "./env.js";
 
 export type MemoryType =
   | "CORE"
@@ -91,47 +92,52 @@ export type ScoredMemory = {
 // matching env var (or wired to a config layer) without changing this file.
 // ----------------------------------------------------------------------------
 
+// numEnv (not `parseFloat(...) || default`): the `|| default` idiom treats a parsed
+// 0 as falsy and silently falls back, so a deployer who sets a knob to 0 (disable
+// recency / importance / an arm / a floor) would mysteriously get the default
+// instead. numEnv honors a configured 0 and only falls back on unset/non-numeric.
+
 // Four-arm hybrid weights (semantic / keyword / time-decay / importance).
-const W_SEM = parseFloat(process.env.RETRIEVAL_W_SEM || "") || 0.35;
-const W_KW = parseFloat(process.env.RETRIEVAL_W_KW || "") || 0.5;
-const W_TIME = parseFloat(process.env.RETRIEVAL_W_TIME || "") || 0.1;
-const W_IMP = parseFloat(process.env.RETRIEVAL_W_IMP || "") || 0.05;
+const W_SEM = numEnv("RETRIEVAL_W_SEM", 0.35);
+const W_KW = numEnv("RETRIEVAL_W_KW", 0.5);
+const W_TIME = numEnv("RETRIEVAL_W_TIME", 0.1);
+const W_IMP = numEnv("RETRIEVAL_W_IMP", 0.05);
 
 // Pure-semantic floor: a hit with NO kw/entity signal must clear this raw
 // cosine to be kept. Keyword/entity hits bypass it (reliable). Sits in the gap
 // between unrelated-query cosine and true-relevant pure-semantic cosine, so it
 // blocks false positives while keeping real semantic recall.
-const SEM_FLOOR = parseFloat(process.env.RETRIEVAL_SEM_FLOOR || "") || 0.38;
+const SEM_FLOOR = numEnv("RETRIEVAL_SEM_FLOOR", 0.38);
 
 // Pure-semantic `final` gate. Default scope keeps the stricter cutoff. Folded
 // obs/profile docs (scope='full') carry no summary leg / entity edges, so a
 // legit pure-semantic hit lands lower on `final`; full scope relaxes the gate.
 // Negatives still can't enter — the sem>=SEM_FLOOR condition is unchanged.
-const SEM_FINAL_FLOOR_DEFAULT = parseFloat(process.env.RETRIEVAL_SEM_FINAL_FLOOR || "") || 0.2;
-const SEM_FINAL_FLOOR_FULL = parseFloat(process.env.RETRIEVAL_SEM_FINAL_FLOOR_FULL || "") || 0.15;
+const SEM_FINAL_FLOOR_DEFAULT = numEnv("RETRIEVAL_SEM_FINAL_FLOOR", 0.2);
+const SEM_FINAL_FLOOR_FULL = numEnv("RETRIEVAL_SEM_FINAL_FLOOR_FULL", 0.15);
 
 // kw filter floor: a survivor with kw >= this is kept regardless of sem. Drops
 // nonsense queries against very-recent rows (whose time-decay boost would
 // otherwise sneak them in). Strong kw / entity matches bypass the sem cap.
-const KW_FILTER_FLOOR = parseFloat(process.env.RETRIEVAL_KW_FILTER_FLOOR || "") || 0.3;
+const KW_FILTER_FLOOR = numEnv("RETRIEVAL_KW_FILTER_FLOOR", 0.3);
 
 // Recency time-decay rate (per day) used in the SQL EXP(-rate * age_days).
-const TIME_DECAY_RATE = parseFloat(process.env.RETRIEVAL_TIME_DECAY_RATE || "") || 0.1;
+const TIME_DECAY_RATE = numEnv("RETRIEVAL_TIME_DECAY_RATE", 0.1);
 
 // ILIKE rung scores for the kw GREATEST() ladder (title > summary > content),
 // plus the entity-hit kw bonus.
-const ILIKE_TITLE = parseFloat(process.env.RETRIEVAL_ILIKE_TITLE || "") || 0.9;
-const ILIKE_SUMMARY = parseFloat(process.env.RETRIEVAL_ILIKE_SUMMARY || "") || 0.8;
-const ILIKE_CONTENT = parseFloat(process.env.RETRIEVAL_ILIKE_CONTENT || "") || 0.7;
-const ENTITY_KW_BONUS = parseFloat(process.env.RETRIEVAL_ENTITY_KW_BONUS || "") || 0.95;
+const ILIKE_TITLE = numEnv("RETRIEVAL_ILIKE_TITLE", 0.9);
+const ILIKE_SUMMARY = numEnv("RETRIEVAL_ILIKE_SUMMARY", 0.8);
+const ILIKE_CONTENT = numEnv("RETRIEVAL_ILIKE_CONTENT", 0.7);
+const ENTITY_KW_BONUS = numEnv("RETRIEVAL_ENTITY_KW_BONUS", 0.95);
 
 // Rerank candidate pool size: wider than `limit` so the reranker can pull a
 // good doc up from a deeper rank that the hybrid sort buried.
-const RERANK_POOL_DEFAULT = parseInt(process.env.RERANK_POOL || "", 10) || 30;
+const RERANK_POOL_DEFAULT = numEnv("RERANK_POOL", 30);
 
 // BM25 (PGroonga) saturation constant: raw pgroonga_score is unbounded;
 // pg_score/(pg_score+K) saturates it into (0,1).
-const PG_BM25_K = parseFloat(process.env.PG_BM25_K || "") || 3;
+const PG_BM25_K = numEnv("PG_BM25_K", 3);
 
 // Diagnostic: max sem over ALL memories for the last scored query (pre-filter),
 // surfaced by eval verbose to tune SEM_FLOOR against real neg/pos spread.
@@ -189,6 +195,11 @@ export async function scoreMemories(
   opts: ScoreOpts = {},
 ): Promise<ScoredMemory[]> {
   const { limit = 10, memoryType, topicId, components, scope = "default" } = opts;
+  // An empty / whitespace query has no relevance signal: qPattern would be '%%',
+  // which ILIKE matches against EVERY row (kw_sim = ILIKE_TITLE ≥ KW_FILTER_FLOOR →
+  // passesFilter true for all), turning the externally-exposed memory_search_safe
+  // into a bulk dump. Return nothing rather than enumerate the store.
+  if (!query || !query.trim()) return [];
   // Live components default ON (preserves original behavior when omitted).
   // bm25/rerank default OFF.
   const useSem = components?.sem ?? true;
@@ -222,7 +233,13 @@ export async function scoreMemories(
   // handle, even an emoji) — surface every memory linked to a matching ACTIVE
   // entity. ILIKE on entity.name string also catches aliases since aliases are
   // encoded inline in the name.
-  const qPattern = `%${query}%`;
+  //
+  // Escape LIKE metacharacters (\ % _) so a literal % or _ in the user's query
+  // matches itself instead of acting as a wildcard (Prisma parameterization stops
+  // SQL injection but not LIKE-metacharacter semantics). ILIKE's default escape
+  // char is backslash, so \% / \_ are literal.
+  const qLike = query.replace(/[\\%_]/g, "\\$&");
+  const qPattern = `%${qLike}%`;
 
   // One scoring pass over every active memory. pg sorts after. At current row
   // counts this is fine; past ~10k rows switch to a candidate-pool CTE (HNSW +

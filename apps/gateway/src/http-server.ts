@@ -10,7 +10,7 @@ import { enabledExtensions } from "./lib/enabled-extensions.js";
 import { errMessage } from "./lib/err.js";
 import prisma from "./db.js";
 import { EventType } from "@prisma/client";
-import { CHAT_SOURCE, buildChatEventValue } from "@kimi/context-core";
+import { writeChatEvent } from "./lib/chat-write.js";
 
 const app = express();
 
@@ -140,25 +140,30 @@ app.post("/events", express.json(), async (req, res) => {
 // Behind the same global Bearer auth.
 app.post("/chat", express.json(), async (req, res) => {
   try {
-    const { role, text, threadId, source } = (req.body ?? {}) as {
+    const { role, text, threadId, source, dedupeKey } = (req.body ?? {}) as {
       role?: string;
       text?: string;
       threadId?: string;
       source?: string;
+      dedupeKey?: string;
     };
     if (typeof text !== "string" || !text.trim()) {
       res.status(400).json({ error: "text required" });
       return;
     }
-    const ev = await prisma.event.create({
-      data: {
-        eventType: EventType.CHAT,
-        value: buildChatEventValue(role ?? "user", text, { threadId }),
-        source: typeof source === "string" && source.trim() ? source.trim().slice(0, 80) : CHAT_SOURCE,
-      },
-      select: { id: true, createdAt: true },
-    });
-    res.json({ ok: true, id: ev.id, at: ev.createdAt.toISOString() });
+    // writeChatEvent validates threadId (throws on a bad charset/length → 400) and
+    // dedups on the optional client idempotency key so a retried send is a no-op.
+    let result;
+    try {
+      result = await writeChatEvent({ role, text, threadId, source, dedupeKey });
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message.startsWith("threadId")) {
+        res.status(400).json({ error: e.message });
+        return;
+      }
+      throw e;
+    }
+    res.json({ ok: true, id: result.id, at: result.at.toISOString(), deduped: result.deduped });
   } catch (err: unknown) {
     console.error("/chat error:", errMessage(err));
     if (!res.headersSent) res.status(500).json({ error: "chat ingest failed" });

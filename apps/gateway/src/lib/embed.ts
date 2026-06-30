@@ -56,7 +56,16 @@ export async function embedText(text: string): Promise<number[] | null> {
       console.error(`[embed] EMBED_MODEL "${model}" returned ${emb.length} dims, expected ${EMBED_DIM} (the DB vector column width). Use a ${EMBED_DIM}-dim model or change the schema.`);
       return null;
     }
-    return emb;
+    if (!emb.every((x) => typeof x === "number" && Number.isFinite(x))) {
+      // A right-length array with a null/NaN/string element (a buggy/partial provider
+      // response) would produce a literal like '[...,null,...]' that pgvector's
+      // ::vector cast rejects — and in retrieval.ts that cast is in the LIVE query, so
+      // it would throw the whole memory_search instead of degrading to keyword-only.
+      // Return null here to keep the "never throw from the embed path" contract.
+      console.error("[embed] response contained a non-finite element — skipping");
+      return null;
+    }
+    return emb as number[];
   } catch (err: unknown) {
     console.error("[embed] failed:", errMessage(err));
     return null;
@@ -78,8 +87,22 @@ export type EmbeddableTable = "memories" | "observations" | "core_profile";
 // that forgot embeddingAt would make the row read as stale and re-embed forever.
 export async function writeEmbedding(table: EmbeddableTable, id: string, emb: number[]): Promise<void> {
   const vec = toVectorLiteral(emb);
+  // Stamp the producing model so a same-dimension EMBED_MODEL swap is detectable —
+  // STALE_EMBEDDING_WHERE re-embeds any row whose stamped model != the current one.
+  const model = embedModelOrNull();
   await prisma.$executeRaw(
-    Prisma.sql`UPDATE ${Prisma.raw(`"${table}"`)} SET embedding = ${vec}::vector, "embeddingAt" = NOW() WHERE id = ${id}`,
+    Prisma.sql`UPDATE ${Prisma.raw(`"${table}"`)} SET embedding = ${vec}::vector, "embeddingAt" = NOW(), "embedModel" = ${model} WHERE id = ${id}`,
+  );
+}
+
+// Clear a row's embedding so the sweep is guaranteed to re-embed it. Used when a
+// text EDIT re-embed fails inline: the row still holds the OLD-text vector, but
+// `updatedAt > createdAt + 1 minute` is FALSE for an edit within ~1 min of creation,
+// so STALE_EMBEDDING_WHERE's edit arm never fires and the stale vector would persist
+// forever. Nulling it re-arms the unconditional `embedding IS NULL` arm.
+export async function clearEmbedding(table: EmbeddableTable, id: string): Promise<void> {
+  await prisma.$executeRaw(
+    Prisma.sql`UPDATE ${Prisma.raw(`"${table}"`)} SET embedding = NULL, "embeddingAt" = NULL WHERE id = ${id}`,
   );
 }
 
@@ -95,5 +118,15 @@ export async function embedAndStore(table: EmbeddableTable, id: string, text: st
 
 // "This active row needs (re)embedding" — the read-side counterpart to the
 // embeddingAt=NOW() write convention. One definition for all three tables: never
-// embedded (NULL), or edited after creation with the embedding not following.
-export const STALE_EMBEDDING_WHERE = Prisma.sql`embedding IS NULL OR ("updatedAt" > "createdAt" + interval '1 minute' AND ("embeddingAt" IS NULL OR "embeddingAt" < "updatedAt"))`;
+// embedded (NULL), edited after creation with the embedding not following, OR
+// embedded by a DIFFERENT model than the current EMBED_MODEL (a same-dimension swap
+// the dim guard can't see). The model arm only fires when embedModel is non-null and
+// differs, so legacy rows with an unknown (NULL) model are left alone — no surprise
+// full re-embed on the deploy that adds the column.
+export function staleEmbeddingWhere(): Prisma.Sql {
+  const model = embedModelOrNull();
+  const modelArm = model
+    ? Prisma.sql` OR ("embedModel" IS NOT NULL AND "embedModel" <> ${model})`
+    : Prisma.empty;
+  return Prisma.sql`embedding IS NULL OR ("updatedAt" > "createdAt" + interval '1 minute' AND ("embeddingAt" IS NULL OR "embeddingAt" < "updatedAt"))${modelArm}`;
+}

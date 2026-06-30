@@ -60,8 +60,11 @@ export function nowISO(): ISO {
 export function applyFilter<T extends StoreEntry>(rows: T[], filter?: Filter): T[] {
   if (!filter) return rows;
   let out = rows;
-  if (filter.ids) out = out.filter((r) => filter.ids!.includes(r.id));
-  if (filter.tags) {
+  // `filter` arrives as opaque z.unknown() cast to Filter — guard the array fields so
+  // a malformed value (e.g. ids:"abc") narrows to "no match" instead of throwing a
+  // TypeError on .includes(...) deep in the handler.
+  if (Array.isArray(filter.ids)) out = out.filter((r) => filter.ids!.includes(r.id));
+  if (Array.isArray(filter.tags)) {
     out = out.filter((r) => {
       const t = (r as { tags?: string[] }).tags;
       return Array.isArray(t) && filter.tags!.some((tag) => t.includes(tag));

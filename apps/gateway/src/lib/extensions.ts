@@ -34,8 +34,15 @@ export interface KimiExtension {
 export function loadExtensions(server: McpServer, extensions: KimiExtension[]): void {
   for (const ext of extensions) {
     if (!ext.registerTools) continue;
-    ext.registerTools(server);
-    console.log(`[ext] tools loaded: ${ext.name}`);
+    // Fault isolation: a throwing registerTools (its own bug, a missing dep, or a
+    // duplicate tool name the MCP SDK rejects) must not take down the whole stdio
+    // server — degrade to "that extension absent" and keep the core tools.
+    try {
+      ext.registerTools(server);
+      console.log(`[ext] tools loaded: ${ext.name}`);
+    } catch (err) {
+      console.error(`[ext] ${ext.name} registerTools failed:`, err);
+    }
   }
 }
 
@@ -49,7 +56,16 @@ export function loadExtensions(server: McpServer, extensions: KimiExtension[]): 
 export function loadExtensionActions(extensions: KimiExtension[]): void {
   for (const ext of extensions) {
     if (!ext.registerActions) continue;
-    ext.registerActions();
-    console.log(`[ext] daemon actions loaded: ${ext.name}`);
+    // Fault isolation: registerActions calls cron.schedule with env-driven patterns
+    // (node-cron throws synchronously on a malformed pattern). This runs at daemon
+    // startup BEFORE the core wake cron is armed, so an uncaught throw here would
+    // exit the process and the core wake loop would never be scheduled. Catch and
+    // continue so one bad/misconfigured extension cannot kill core daemon behavior.
+    try {
+      ext.registerActions();
+      console.log(`[ext] daemon actions loaded: ${ext.name}`);
+    } catch (err) {
+      console.error(`[ext] ${ext.name} registerActions failed:`, err);
+    }
   }
 }

@@ -65,6 +65,8 @@ const scoreNew = (raw: string) => parseSessionScore(raw);
 // ── realistic LLM outputs: old and new MUST agree ───────────────────────────────
 const REALISTIC_DIGESTS = [
   `prose {"summary":"talked about X","valence":0.4,"arousal":0.2,"suggested_topic_slug":"depth"} tail`,
+  // brace-in-prose before the JSON — the greedy-regex extractor used to drop this.
+  `Let me think. The set {a, b}.\n{"summary":"real answer","valence":0.3}`,
   `{"summary":"only summary"}`,                                  // no v/a/topic
   `{"summary":"s","valence":0.5}`,                               // valence, no arousal
   `{"summary":"s","valence":2,"arousal":9}`,                     // out of range — both kept
@@ -98,6 +100,29 @@ describe("intel wire — realistic LLM outputs: new path is byte-identical to ol
     it(`score[${i}] old === new`, () => {
       expect(scoreNew(raw)).toEqual(scoreOld(raw));
     });
+  });
+});
+
+// Direct contract for the brace-balanced extractor: prose with stray braces around
+// the JSON, and two objects, must still surface a valid first object — the greedy
+// /\{[\s\S]*\}/ regex returned null for all of these.
+describe("firstJsonObject — brace-balanced scan survives stray braces in prose", () => {
+  it("brace in prose BEFORE the json", () => {
+    expect(firstJsonObject(`Let me think. The set {a, b}.\n{"summary":"real answer","valence":0.3}`))
+      .toEqual({ summary: "real answer", valence: 0.3 });
+  });
+  it("trailing prose with a brace AFTER the json", () => {
+    expect(firstJsonObject(`{"summary":"hi"}\nNote: use {curly} carefully.`))
+      .toEqual({ summary: "hi" });
+  });
+  it("two objects — returns the first", () => {
+    expect(firstJsonObject(`{"a":1}\n{"b":2}`)).toEqual({ a: 1 });
+  });
+  it("brace inside a string literal is not a structural brace", () => {
+    expect(firstJsonObject(`{"text":"a } b","ok":true}`)).toEqual({ text: "a } b", ok: true });
+  });
+  it("no json -> null", () => {
+    expect(firstJsonObject(`I cannot help with that.`)).toBeNull();
   });
 });
 

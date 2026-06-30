@@ -42,7 +42,21 @@ export async function chatCompletion(args: {
     const body = await res.text().catch(() => "");
     throw new Error(`LLM ${res.status}: ${body.slice(0, 200)}`);
   }
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const data = (await res.json()) as {
+    error?: unknown;
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  // Some OpenAI-compatible gateways (OpenRouter et al.) report upstream/moderation/
+  // credit failures as HTTP 200 with an `{ "error": {...} }` envelope and no
+  // `choices`. The !res.ok guard above never fires for those, and collapsing them to
+  // "" makes a provider failure indistinguishable from a genuine empty completion.
+  // Throw on the error envelope; warn when choices is absent so it's observable.
+  if (data && typeof data === "object" && data.error != null) {
+    throw new Error(`LLM provider error: ${JSON.stringify(data.error).slice(0, 200)}`);
+  }
+  if (!data?.choices) {
+    console.warn("[llm] response had no choices array — returning empty completion");
+  }
   return data?.choices?.[0]?.message?.content ?? "";
 }
 

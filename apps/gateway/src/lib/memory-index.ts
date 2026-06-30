@@ -25,7 +25,7 @@ export interface IndexResult {
 export async function indexNewMemory(
   memoryId: string,
   embedInput: string,
-  opts: { withSimilarEdges?: boolean; logTag?: string } = {},
+  opts: { withSimilarEdges?: boolean; logTag?: string; reconcileMentions?: boolean } = {},
 ): Promise<IndexResult> {
   const tag = opts.logTag ?? "index";
 
@@ -41,9 +41,11 @@ export async function indexNewMemory(
   }
 
   // 2. Entity→memory mention edges. Independent of the embed — its own catch, so
-  //    an embed failure never blocks mentions and vice-versa.
+  //    an embed failure never blocks mentions and vice-versa. reconcileMentions is
+  //    set on the edit path so removing an entity from the text drops its stale edge
+  //    (add-only by default for backfill callers — see sweepMemoryMentions).
   try {
-    await sweepMemoryMentions(memoryId);
+    await sweepMemoryMentions(memoryId, { reconcile: opts.reconcileMentions });
   } catch (e: unknown) {
     console.warn(`[${tag}] mention sweep failed: ${errMessage(e)}`);
   }
@@ -55,8 +57,19 @@ export async function indexNewMemory(
   if (opts.withSimilarEdges && emb) {
     const sims = await findSimilarMemories(emb, memoryId);
     for (const s of sims) {
-      await prisma.link.create({
-        data: {
+      // Upsert on the Link natural-key unique so a closeout indexing racing the
+      // nightly similarity sweep can't double-write the same similar edge.
+      await prisma.link.upsert({
+        where: {
+          fromType_fromId_toType_toId_relationType: {
+            fromType: "memory",
+            fromId: memoryId,
+            toType: "memory",
+            toId: s.id,
+            relationType: "similar",
+          },
+        },
+        create: {
           fromType: "memory",
           fromId: memoryId,
           toType: "memory",
@@ -65,6 +78,7 @@ export async function indexNewMemory(
           confidence: s.confidence,
           note: `auto-linked at closeout (cosine sim ${s.confidence.toFixed(2)})`,
         },
+        update: {},
       });
       edgesCreated++;
     }

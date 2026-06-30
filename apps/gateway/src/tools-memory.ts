@@ -9,6 +9,7 @@ import { z } from "zod";
 import prisma from "./db.js";
 import { localDate } from "./time.js";
 import { indexNewMemory } from "./lib/memory-index.js";
+import { clearEmbedding } from "./lib/embed.js";
 import { scoreMemories } from "./lib/retrieval.js";
 import { walkGraph } from "./lib/graph-walk.js";
 import { tagDepthIfNeeded } from "./lib/depth-judge.js";
@@ -207,7 +208,7 @@ export function registerMemoryTools(server: McpServer) {
     "memory_search",
     "Memory search: hybrid scoring — semantic (pgvector) + ILIKE substring (CJK-friendly) + pg_trgm fuzzy (Latin-friendly) + entity-mention edges. Unified ranking, no short-circuit so a deterministic keyword query can outrank a cosine-similarity neighbor. RESTRICTED excluded by default. includeContent=true returns the full body. Deep recall: scope='full' widens to the observation/profile/RESTRICTED/private pool, rerank=true runs a local cross-encoder re-rank — for oblique / semantic / whole-picture recall where the phrasing doesn't match the stored wording; slower. Default scope='default'+rerank=false = the fast default pool.",
     {
-      query: z.string().describe("Natural-language query — semantic or keyword"),
+      query: z.string().trim().min(1).describe("Natural-language query — semantic or keyword"),
       memoryType: z.enum(["CORE", "STATE", "EPISODE", "PREFERENCE", "BOUNDARY", "RESTRICTED"]).optional(),
       topicId: z.string().optional(),
       limit: z.number().default(10),
@@ -282,7 +283,7 @@ export function registerMemoryTools(server: McpServer) {
     "memory_search_safe",
     "Non-sensitive retrieval over the memory store — for collaborating external agents. Same hybrid scoring as memory_search (semantic pgvector + keyword + entity edges), but the server hard-locks it: always scope=default (never touches the private/profile / observation / RESTRICTED pool), refuses RESTRICTED/SELF_SCORE types, and runs each hit through a public-facing content predicate (dropped on match). Returns the clean part of CORE/PREFERENCE/BOUNDARY/STATE/EPISODE: who the user is, how they work, preferences/boundaries, current state, decisions and recent context. If nothing is found say so; do not fabricate.",
     {
-      query: z.string().describe("Natural-language query — semantic or keyword"),
+      query: z.string().trim().min(1).describe("Natural-language query — semantic or keyword"),
       memoryType: z
         .enum(["CORE", "STATE", "EPISODE", "PREFERENCE", "BOUNDARY"])
         .optional()
@@ -472,7 +473,18 @@ export function registerMemoryTools(server: McpServer) {
         const newTitle = title ?? existing.title;
         const newSummary = summary ?? existing.summary;
         const newContent = content ?? existing.content;
-        await indexNewMemory(id, `${newTitle}\n${newSummary || newContent}`, { logTag: "memory_edit" });
+        const r = await indexNewMemory(id, `${newTitle}\n${newSummary || newContent}`, { logTag: "memory_edit", reconcileMentions: true });
+        // If the inline re-embed failed, the row still holds the OLD-text vector. For
+        // an edit within ~1 min of creation STALE_EMBEDDING_WHERE's edit arm won't
+        // fire, so without this the stale vector would persist forever. NULL it so the
+        // `embedding IS NULL` arm guarantees the sweep re-embeds the new text.
+        if (!r.embedded) {
+          try {
+            await clearEmbedding("memories", id);
+          } catch (e: unknown) {
+            console.warn("[memory_edit] clearEmbedding failed (sweep may miss edit):", errMessage(e));
+          }
+        }
       }
 
       // Audit breadcrumb — which fields changed + the user authorization that gated it.

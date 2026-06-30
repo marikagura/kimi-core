@@ -117,8 +117,16 @@ export function registerStoreTools(server: McpServer): void {
             const prev = entry.id
               ? await prisma.storeRow.findUnique({ where: { id: entry.id } })
               : null;
-            const existing =
-              prev && prev.collection === collection ? rowToEntry(toStoreRow(prev)) : null;
+            // The row PK is `id` alone, so upsertRow keys purely on id. If this id
+            // already belongs to a DIFFERENT collection, treating it as "new" would
+            // make the update path clobber that foreign row's data, re-home it to
+            // this collection, and reset its createdAt. Reject instead of destroying.
+            if (prev && prev.collection !== collection) {
+              throw new Error(
+                `id "${entry.id}" already exists in collection "${prev.collection}" — refusing to overwrite it from "${collection}"`,
+              );
+            }
+            const existing = prev ? rowToEntry(toStoreRow(prev)) : null;
             const merged = mergeEntry(existing, entry, nowISO());
             await upsertRow(entryToRow(collection, merged));
             result = merged;
@@ -156,6 +164,16 @@ export function registerStoreTools(server: McpServer): void {
           }
           case "blobPut": {
             const b = (args.blob ?? {}) as Partial<BlobEntry> & { id?: string };
+            // Same cross-collection clobber guard as `put`: a caller-supplied id that
+            // already lives in a non-blob collection must not be hijacked by blobPut.
+            if (b.id) {
+              const prev = await prisma.storeRow.findUnique({ where: { id: b.id } });
+              if (prev && prev.collection !== BLOB_COLLECTION) {
+                throw new Error(
+                  `id "${b.id}" already exists in collection "${prev.collection}" — refusing to overwrite it with a blob`,
+                );
+              }
+            }
             const full: BlobEntry = {
               id: b.id ?? newId(),
               kind: String(b.kind ?? "misc"),

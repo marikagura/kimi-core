@@ -18,6 +18,7 @@
 
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
+import { Prisma } from "@prisma/client";
 import prisma from "../../db.js";
 import { buildPersona } from "@kimi/context-core";
 import { callLLMShort } from "../../lib/llm.js";
@@ -94,7 +95,12 @@ export async function gatherWeekData(weekStart: Date, weekEnd: Date): Promise<We
   const selfScores = await prisma.memory.findMany({
     where: { memoryType: "SELF_SCORE", createdAt: inWeek, isActive: true },
     select: { title: true, content: true, valence: true, arousal: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
+    // Cap like every other collection here (episodes 30 / anchors 15 / stateChanges
+    // 20). SELF_SCOREs are written per closeout + per intel run + per chat session,
+    // so a busy week could otherwise dump unbounded rows into the prompt, crowding
+    // out episodes and inflating token cost. Keep the most salient (highest arousal).
+    orderBy: [{ arousal: "desc" }, { createdAt: "asc" }],
+    take: 30,
   });
 
   const concerns = await prisma.activeState.findMany({
@@ -189,19 +195,30 @@ export async function writeArcMemory(
     ? arcText.trim().slice(0, 280)
     : `week ${data.weekKey}: ${data.episodes.length} episodes / ${data.dreamCount} dreams (arc generation failed, stats only)`;
 
-  await prisma.memory.create({
-    data: {
-      title,
-      content,
-      summary,
-      memoryType: "EPISODE",
-      sourceType: "EVENT",
-      importance: 4,
-      experiencer: "SHARED",
-      authorModel,
-      validFrom: new Date(data.weekEnd.getTime() - 1), // anchor at the week's end
-    },
-  });
+  try {
+    await prisma.memory.create({
+      data: {
+        title,
+        content,
+        summary,
+        memoryType: "EPISODE",
+        sourceType: "EVENT",
+        importance: 4,
+        experiencer: "SHARED",
+        authorModel,
+        validFrom: new Date(data.weekEnd.getTime() - 1), // anchor at the week's end
+      },
+    });
+  } catch (e: unknown) {
+    // The findFirst-then-create dedup is a TOCTOU race (a manual run + the cron in
+    // the same window both see "not existing"). If a unique constraint on the arc
+    // title is present, the loser hits P2002 — treat that as a dedup, not an error,
+    // so two overlapping runs can't both write a duplicate importance-4 arc.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { written: false, deduped: true };
+    }
+    throw e;
+  }
   return { written: true, deduped: false };
 }
 
@@ -220,7 +237,17 @@ export async function runWeeklyArc(): Promise<{ weekKey: string; episodeCount: n
   const now = new Date();
   const weekStart = new Date(now.getTime() - 7 * 86_400_000);
   const data = await gatherWeekData(weekStart, now);
-  const { text, model } = await generateArc(data);
+  // Minimum-material gate: on a quiet week (no episodes / self-scores / anchors /
+  // state changes) the data block is just a header, and asking the model for a
+  // 200-400 word first-person narrative invites a hallucinated week-of-life that we
+  // would then persist as a permanent importance-4 SHARED EPISODE. Skip the LLM and
+  // write the stats-only fallback instead (writeArcMemory still dedups by week).
+  const hasMaterial =
+    data.episodes.length > 0 ||
+    data.selfScores.length > 0 ||
+    data.anchors.length > 0 ||
+    data.stateChanges.length > 0;
+  const { text, model } = hasMaterial ? await generateArc(data) : { text: null, model: "" };
   const res = await writeArcMemory(data, text, text ? model : null);
   console.log(
     res.deduped

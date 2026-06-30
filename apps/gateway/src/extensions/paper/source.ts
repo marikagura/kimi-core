@@ -44,6 +44,8 @@ export interface PubMedConfig {
 const EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
 
 // Minimal shape of an NCBI esummary `result[uid]` entry (only the fields read here).
+// `error` is present on a per-UID error stub (e.g. { uid, error: "cannot get
+// document summary" }) for suppressed/retracted/embargoed UIDs that esearch lists.
 type ESummaryArticle = {
   uid?: string | number;
   title?: string;
@@ -51,6 +53,7 @@ type ESummaryArticle = {
   fulljournalname?: string;
   source?: string;
   pubdate?: string;
+  error?: string;
 };
 
 export function pubMedAdapter(cfg: PubMedConfig): SourceAdapter {
@@ -79,7 +82,11 @@ export function pubMedAdapter(cfg: PubMedConfig): SourceAdapter {
       const wl = cfg.journalWhitelist?.map((j) => j.toLowerCase());
       return ids
         .map((id) => udata.result?.[id])
-        .filter((a): a is ESummaryArticle => Boolean(a))
+        // Drop missing entries AND per-UID error stubs / entries with no usable
+        // title or uid: otherwise an error stub becomes a PaperHit with title "" and
+        // externalId "undefined" (every later stub then dedups to that one row,
+        // masking real fetch gaps) and wastes an LLM distill() call.
+        .filter((a): a is ESummaryArticle => Boolean(a) && !a!.error && a!.uid != null && Boolean(a!.title))
         .filter((a) => {
           if (!wl?.length) return true;
           const journal = (a.fulljournalname || a.source || "").toLowerCase();

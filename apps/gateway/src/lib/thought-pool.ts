@@ -114,9 +114,14 @@ export async function resolveThought(key: string): Promise<void> {
 // deriver adds this to the matching dimension's confidence (only lifting dims
 // that already have grounding>0 — never conjuring one). Empty Map = no change.
 export async function driveBoostByDim(now: Date = new Date()): Promise<Map<string, number>> {
+  // Lower time bound: a hit older than the hard timeout can never keep any key a
+  // live fixation, so re-scanning the entire append-only THOUGHT_HIT log every run
+  // is pure waste (and unbounded growth once a producer is wired). Only fetch the
+  // window that can still contribute.
+  const since = new Date(now.getTime() - HARD_TIMEOUT_DAYS * 86400000);
   const [hitRows, resolvedRows] = await Promise.all([
     prisma.event.findMany({
-      where: { eventType: "THOUGHT_HIT", createdAt: { lte: now } },
+      where: { eventType: "THOUGHT_HIT", createdAt: { gte: since, lte: now } },
       select: { value: true, source: true, createdAt: true },
     }),
     prisma.event.findMany({ where: { eventType: "THOUGHT_RESOLVED" }, select: { value: true } }),

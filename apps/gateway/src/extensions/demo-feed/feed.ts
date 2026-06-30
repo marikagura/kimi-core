@@ -90,6 +90,12 @@ export async function demoFeedTick(now: Date = new Date()): Promise<void> {
 /** Opt-in: start the demo feed on a timer. Enable via KIMI_EXTENSIONS=demo-feed. */
 export function registerDemoFeed(): void {
   const schedule = process.env.DEMO_FEED_CRON || "*/2 * * * *"; // every 2 minutes
+  // Validate before scheduling: node-cron throws synchronously on a malformed
+  // pattern, which would otherwise propagate out of the daemon's extension loader.
+  if (!cron.validate(schedule)) {
+    console.error(`[demo-feed] invalid DEMO_FEED_CRON "${schedule}" — skipping schedule`);
+    return;
+  }
   const tz = process.env.KIMI_CRON_TZ || DEFAULT_TZ;
   cron.schedule(
     schedule,

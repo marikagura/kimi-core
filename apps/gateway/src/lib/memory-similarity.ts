@@ -50,8 +50,19 @@ export async function sweepMemorySimilarity(memoryId: string): Promise<number> {
   const sims = await findSimilarMemories(emb, memoryId);
   let created = 0;
   for (const s of sims) {
-    await prisma.link.create({
-      data: {
+    // Upsert on the Link natural-key unique so a concurrent indexer racing past the
+    // count() short-circuit above can't double-write the same similar edge.
+    await prisma.link.upsert({
+      where: {
+        fromType_fromId_toType_toId_relationType: {
+          fromType: "memory",
+          fromId: memoryId,
+          toType: "memory",
+          toId: s.id,
+          relationType: "similar",
+        },
+      },
+      create: {
         fromType: "memory",
         fromId: memoryId,
         toType: "memory",
@@ -60,6 +71,7 @@ export async function sweepMemorySimilarity(memoryId: string): Promise<number> {
         confidence: s.confidence,
         note: `auto-sweep cosine ${s.confidence.toFixed(2)}`,
       },
+      update: {},
     });
     created++;
   }

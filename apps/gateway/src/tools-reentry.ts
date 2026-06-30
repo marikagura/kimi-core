@@ -7,8 +7,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import prisma from "./db.js";
 import { localDateTime } from "./time.js";
-import { EventType } from "@prisma/client";
-import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED, loadMergedChat, loadChatThreads, CHAT_SOURCE, buildChatEventValue } from "@kimi/context-core";
+import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED, loadMergedChat, loadChatThreads } from "@kimi/context-core";
+import { writeChatEvent } from "./lib/chat-write.js";
 import { isColdStartExcluded } from "./lib/reentry-filter.js";
 import { renderAnchor } from "./tools-shared.js";
 
@@ -53,21 +53,26 @@ export function registerReentryTools(server: McpServer) {
       text: z.string().describe("the message text"),
       threadId: z.string().optional().describe("conversation thread id; groups messages for a front-end thread view"),
       source: z.string().optional().describe("surface tag; defaults to the primary chat source"),
+      dedupeKey: z.string().optional().describe("client idempotency key; a retry with the same key returns the original row instead of duplicating"),
     },
-    async ({ role, text, threadId, source }) => {
+    async ({ role, text, threadId, source, dedupeKey }) => {
       if (!text || !text.trim()) {
         return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "text required" }) }] };
       }
-      const ev = await prisma.event.create({
-        data: {
-          eventType: EventType.CHAT,
-          value: buildChatEventValue(role ?? "user", text, { threadId }),
-          source: source && source.trim() ? source.trim().slice(0, 80) : CHAT_SOURCE,
-        },
-        select: { id: true, createdAt: true },
-      });
+      // writeChatEvent validates threadId and dedups on the optional idempotency key
+      // (shared with POST /chat) so a retried cross-device send can't duplicate.
+      let result;
+      try {
+        result = await writeChatEvent({ role, text, threadId, source, dedupeKey });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.startsWith("threadId")) {
+          return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: msg }) }] };
+        }
+        throw e;
+      }
       return {
-        content: [{ type: "text", text: JSON.stringify({ ok: true, id: ev.id, at: ev.createdAt.toISOString() }) }],
+        content: [{ type: "text", text: JSON.stringify({ ok: true, id: result.id, at: result.at.toISOString(), deduped: result.deduped }) }],
       };
     },
   );

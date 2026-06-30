@@ -7,11 +7,96 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import prisma from "./db.js";
 import { localDateTime } from "./time.js";
-import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED } from "@kimi/context-core";
+import { EventType } from "@prisma/client";
+import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED, loadMergedChat, loadChatThreads, CHAT_SOURCE, buildChatEventValue } from "@kimi/context-core";
 import { isColdStartExcluded } from "./lib/reentry-filter.js";
 import { renderAnchor } from "./tools-shared.js";
 
 export function registerReentryTools(server: McpServer) {
+  // chat_read — recent cross-surface conversation as one merged timeline, for a
+  // front end to render the history (incl. what another device wrote) or to poll
+  // for new messages. Distinct from reentry, which builds full cold-start context.
+  server.tool(
+    "chat_read",
+    "Read recent conversation as one cross-surface timeline (merged by the server clock). Returns JSON {role,text,surface,at,threadId}[] in a text block — for a front end to render history a second device wrote, or to poll for new messages since a timestamp. Pass threadId to read one thread; omit for all threads merged. Distinct from reentry (which builds full cold-start context).",
+    {
+      take: z.number().int().positive().max(500).optional().describe("max messages to return (default 40)"),
+      sinceISO: z.string().optional().describe("ISO timestamp; return messages at/after it (incremental polling)"),
+      threadId: z.string().optional().describe("restrict to one conversation thread; omit for all threads merged"),
+    },
+    async ({ take, sinceISO, threadId }) => {
+      const parsed = sinceISO ? new Date(sinceISO) : undefined;
+      const since = parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined;
+      const msgs = await loadMergedChat(prisma, take ?? 40, since, threadId);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              msgs.map((m) => ({ role: m.role, text: m.text, surface: m.surface, at: m.at.toISOString(), threadId: m.threadId })),
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  // chat_write — append one message to the conversation (so other surfaces / devices
+  // see it and it enters the digest path). Mirrors POST /chat for MCP-native front
+  // ends (kimi-room writes through this over the same /mcp it already uses). One
+  // message per call; pass a distinct `source` per surface to keep tracks separable.
+  server.tool(
+    "chat_write",
+    "Append one chat message to the conversation ({ role, text, threadId?, source? }). Stored as a CHAT event that the cross-surface timeline + digest path read, so other devices see it. role defaults to user; source defaults to the primary chat surface; threadId groups messages into one conversation thread.",
+    {
+      role: z.enum(["user", "assistant"]).optional().describe("who said it (default user)"),
+      text: z.string().describe("the message text"),
+      threadId: z.string().optional().describe("conversation thread id; groups messages for a front-end thread view"),
+      source: z.string().optional().describe("surface tag; defaults to the primary chat source"),
+    },
+    async ({ role, text, threadId, source }) => {
+      if (!text || !text.trim()) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "text required" }) }] };
+      }
+      const ev = await prisma.event.create({
+        data: {
+          eventType: EventType.CHAT,
+          value: buildChatEventValue(role ?? "user", text, { threadId }),
+          source: source && source.trim() ? source.trim().slice(0, 80) : CHAT_SOURCE,
+        },
+        select: { id: true, createdAt: true },
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, id: ev.id, at: ev.createdAt.toISOString() }) }],
+      };
+    },
+  );
+
+  // chat_threads — distinct conversation threads (threadId + title + lastAt + count),
+  // for a front-end history list. Cross-device: a thread another device started shows
+  // up here so this device can open it.
+  server.tool(
+    "chat_threads",
+    "List recent conversation threads as JSON {threadId,title,lastAt,count}[] in a text block — for a front end to render a chat-history list (incl. threads other devices started). Newest-active first.",
+    {
+      limit: z.number().int().positive().max(200).optional().describe("max threads (default 50)"),
+      lookbackDays: z.number().int().positive().max(3650).optional().describe("how far back to scan (default 90)"),
+    },
+    async ({ limit, lookbackDays }) => {
+      const threads = await loadChatThreads(prisma, { limit, lookbackDays });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              threads.map((t) => ({ threadId: t.threadId, title: t.title, lastAt: t.lastAt.toISOString(), count: t.count })),
+            ),
+          },
+        ],
+      };
+    },
+  );
+
   server.tool(
     "reentry",
     [
@@ -31,8 +116,8 @@ export function registerReentryTools(server: McpServer) {
         Array<{ id: string; stateType: string; title: string; summary: string | null; content: string }>
       >`SELECT id, "stateType"::text AS "stateType", title, summary, content FROM active_state WHERE "isActive" = true ORDER BY "startAt" DESC`;
       const topics = await prisma.topic.findMany({ where: { status: "ACTIVE" }, orderBy: { priority: "desc" } });
-      // Filter RESTRICTED — reentry is a harness-visible cold-start surface; RESTRICTED is
-      // not injected here. memory_search / private_read can opt in explicitly.
+      // RESTRICTED-type memories are not injected at cold start; memory_search can
+      // opt in explicitly.
       //
       // Two queries by altitude:
       // - anchors: CORE/BOUNDARY/PREFERENCE, full content (the rule is the body)
@@ -48,9 +133,8 @@ export function registerReentryTools(server: McpServer) {
         orderBy: [{ importance: "desc" }, { createdAt: "desc" }],
         include: { topic: true },
       })).filter((m: any) =>
-        // Cold-start exclusion (tech-only titles, sensitive prefixes, and any
-        // private content predicate) is externalized — see lib/reentry-filter.
-        // Ships neutral (no exclusions) in the open-source core.
+        // Cold-start exclusion (configurable title / prefix / content rules) is
+        // externalized — see lib/reentry-filter. Ships neutral (no exclusions).
         !isColdStartExcluded(m.title, `${m.title ?? ""} ${m.summary ?? ""} ${m.content ?? ""}`)
       );
       // Observations (structured reads about the user / assistant). reentry
@@ -76,10 +160,9 @@ export function registerReentryTools(server: McpServer) {
         orderBy: { createdAt: "desc" },
         take: 10,
       });
-      // Dialogue digests (sanitized) instead of raw CHAT — raw may contain
-      // sensitive content that a cold session reentry should not expose. The
-      // digest layer is produced sanitized; the cold-start content filter is a
-      // second layer on top (externalized, ships neutral).
+      // Dialogue digests (compressed summaries) instead of raw CHAT. The digest
+      // layer is produced by the digest tick; the cold-start filter (externalized,
+      // ships neutral) is a second layer on top.
       const digests = (await prisma.memory.findMany({
         where: { isActive: true, ...CHAT_DIGEST_WHERE },
         orderBy: { createdAt: "desc" },
@@ -138,7 +221,7 @@ export function registerReentryTools(server: McpServer) {
             .join("\n\n---\n\n")
         : "No recent episodes.\n";
 
-      ctx += "\n\n## Recent dialogue digests (sanitized · past memory, not the current conversation)\n";
+      ctx += "\n\n## Recent dialogue digests (past memory, not the current conversation)\n";
       const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       ctx += digests.length
         ? digests.map((d) => {
@@ -156,6 +239,19 @@ export function registerReentryTools(server: McpServer) {
             return `- [${ageLabel}] ${d.title}: ${body}`;
           }).join("\n")
         : "- (none — the digest layer produces these automatically)";
+
+      // Recent chat (raw · merged across surfaces) — the live conversation, so a new
+      // window picks up where it left off rather than only from summaries. Distinct
+      // from the digests above (those are past, compressed). Injected as-is; if a
+      // deployment needs to hold some rows back, add a denylist filter over
+      // `recentChat` here (e.g. coldStartExcludeContent from lib/reentry-filter).
+      const recentChat = await loadMergedChat(prisma, 20);
+      ctx += "\n\n## Recent chat (raw · merged across surfaces · the current conversation)\n";
+      ctx += recentChat.length
+        ? recentChat
+            .map((m) => `- [${localDateTime(m.at)}] (${m.surface}/${m.role}) ${m.text.slice(0, 500)}`)
+            .join("\n")
+        : "- (none)";
 
       ctx += "\n\n## Recent Events\n\n";
       ctx += recentEvents.length
@@ -324,7 +420,7 @@ export function registerReentryTools(server: McpServer) {
       }
       if (digests.length) {
         any = true;
-        ctx += "\n\n## Dialogue digests Δ (sanitized)\n\n";
+        ctx += "\n\n## Dialogue digests Δ\n\n";
         ctx += digests.map((d) => `- [${mark(d.createdAt)}] ${d.title}: ${(d.summary || d.content).slice(0, 300)}`).join("\n");
       }
       if (topics.length) {

@@ -10,6 +10,7 @@ import { enabledExtensions } from "./lib/enabled-extensions.js";
 import { errMessage } from "./lib/err.js";
 import prisma from "./db.js";
 import { EventType } from "@prisma/client";
+import { CHAT_SOURCE, buildChatEventValue } from "@kimi/context-core";
 
 const app = express();
 
@@ -124,6 +125,43 @@ app.post("/events", express.json(), async (req, res) => {
   } catch (err: unknown) {
     console.error("/events error:", errMessage(err));
     if (!res.headersSent) res.status(500).json({ error: "ingest failed" });
+  }
+});
+
+// ─── Conversational ingest — POST /chat ──────────────────────────────────────
+// One chat message per call ({ role, text, source? }), stored as a CHAT event the
+// merge + digest path reads. Separate from POST /events on purpose: the backend
+// assembles a compliant CHAT value ({role,text} JSON) and defaults source to
+// CHAT_SOURCE, so loadMergedChat (cross-surface timeline) and the digest tick
+// both cover it. (POST /events stores opaque text under source=ingest, which the
+// chat readers skip — see docs/EXTENSIONS.md.) A front end posts the user message
+// on send and the assistant message once its own generation completes; pass a
+// distinct `source` per surface to keep them on separate, mergeable tracks.
+// Behind the same global Bearer auth.
+app.post("/chat", express.json(), async (req, res) => {
+  try {
+    const { role, text, threadId, source } = (req.body ?? {}) as {
+      role?: string;
+      text?: string;
+      threadId?: string;
+      source?: string;
+    };
+    if (typeof text !== "string" || !text.trim()) {
+      res.status(400).json({ error: "text required" });
+      return;
+    }
+    const ev = await prisma.event.create({
+      data: {
+        eventType: EventType.CHAT,
+        value: buildChatEventValue(role ?? "user", text, { threadId }),
+        source: typeof source === "string" && source.trim() ? source.trim().slice(0, 80) : CHAT_SOURCE,
+      },
+      select: { id: true, createdAt: true },
+    });
+    res.json({ ok: true, id: ev.id, at: ev.createdAt.toISOString() });
+  } catch (err: unknown) {
+    console.error("/chat error:", errMessage(err));
+    if (!res.headersSent) res.status(500).json({ error: "chat ingest failed" });
   }
 });
 

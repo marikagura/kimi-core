@@ -13,13 +13,14 @@ import { errMessage } from "./err.js";
 export async function writeSessionScore(args: {
   dateStr: string;
   startHHMM: string;
+  srcTag?: string;
   valence: number;
   arousal: number | null;
   note: string;
   firstAt: Date;
   lastAt: Date;
 }): Promise<{ written: boolean }> {
-  const scoreTitle = `chat-score ${args.dateStr} ${args.startHHMM}`;
+  const scoreTitle = `chat-score ${args.dateStr} ${args.startHHMM}${args.srcTag ?? ""}`;
   const exists = await prisma.memory.findFirst({
     where: { memoryType: "SELF_SCORE", title: scoreTitle },
     select: { id: true },

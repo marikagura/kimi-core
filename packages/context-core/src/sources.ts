@@ -25,15 +25,31 @@ export const CHAT_DIGEST_WHERE = { memoryType: "EPISODE", ...CHAT_DIGEST_SHARED 
 export interface ChatEventValue { role: "user" | "assistant"; text: string }
 export function parseChatEvent(
   value: string | null,
-): { role: "user" | "assistant"; text: string; who: "user" | "self" } | null {
+): { role: "user" | "assistant"; text: string; who: "user" | "self"; threadId?: string } | null {
   try {
     const o = JSON.parse(value || "{}");
     if (typeof o.text !== "string" || !o.text) return null;
     const role = o.role === "assistant" ? "assistant" : "user";
-    return { role, text: o.text, who: role === "assistant" ? "self" : "user" };
+    return { role, text: o.text, who: role === "assistant" ? "self" : "user", threadId: typeof o.threadId === "string" ? o.threadId : undefined };
   } catch {
     return null;
   }
+}
+
+// Encode a CHAT event.value from a role + text — the counterpart to parseChatEvent.
+// One definition so every writer (POST /chat, the chat_write tool) stores the SAME
+// shape that parseChatEvent / loadMergedChat read.
+export function buildChatEventValue(
+  role: string,
+  text: string,
+  opts: { threadId?: string; maxLen?: number } = {},
+): string {
+  const v: { role: "user" | "assistant"; text: string; threadId?: string } = {
+    role: role === "assistant" ? "assistant" : "user",
+    text: text.slice(0, opts.maxLen ?? 8000),
+  };
+  if (opts.threadId) v.threadId = opts.threadId;
+  return JSON.stringify(v);
 }
 
 // Title prefixes for sensitive memories that must never enter injected context.

@@ -7,17 +7,16 @@
 //    (turn-context.ts / chat-memory.ts / chatroom-reentry) is only a thin format layer.
 //  - Prisma is injected (not bound to a client): each consumer passes its own client
 //    to avoid import-path conflicts and competing connection-pool instances.
-//  - surface decides harness visibility (NOT private vs. public):
-//      cc      → model-harness visible → filter restricted/private (the only filtered case)
-//      tg/voice/chatroom → only reachable after auth → full payload incl. restricted/private
-//      (any public-facing denylist is a separate path and does not go through this core)
+//  - surface selects which layers compose into its output. Some layers are gated
+//    per surface (each loader documents its own rule); a layer that does not apply
+//    to a surface returns null and is skipped.
 //  - canMcp: chatroom=true (can self-query via MCP → static light injection ok);
 //    tg/voice=false (inject in full — if the push moment under-delivers it cannot be
 //    backfilled with a later query).
 //
-// Layers: restricted / register / private / anchors / states / observations / episodes /
-//   topics / events / profile / entities / digests / persona / merged-chat. Each layer
-//   is loaded independently so any output can compose only the slices it needs.
+// Layers are loaded independently so any output can compose only the slices it needs:
+//   register / anchors / states / observations / episodes / topics / events /
+//   profile / entities / digests / persona / merged-chat.
 
 import type { PrismaClient } from "@prisma/client";
 import { localDateTime } from "./time.js";
@@ -40,11 +39,11 @@ export interface ContextOpts {
   surface: Surface;
   /** chatroom=true (can self-query via MCP, light static injection); tg/voice=false
    *  (inject full, cannot backfill later). Note: this is a signal for the output format
-   *  layer — the loader does not read it (the loader only branches the cc filter on
-   *  surface). Outputs use it to decide whether a layer renders lean (title/index) or full. */
+   *  layer — the loader does not read it (the loader only branches per surface).
+   *  Outputs use it to decide whether a layer renders lean (title/index) or full. */
   canMcp: boolean;
-  /** inject all restricted rows within the last N days (restricted content is infrequent,
-   *  windowed by day not by count); default DEFAULT_RECENT_DAYS. */
+  /** for a gated layer, inject all rows within the last N days (such rows are
+   *  infrequent, so windowed by day not by count); default DEFAULT_RECENT_DAYS. */
   recentRestrictedDays?: number;
 }
 
@@ -55,11 +54,11 @@ export interface RestrictedItem {
 }
 
 /**
- * the restricted layer has three tiers:
- *  - templates: restricted templates (voice / mode / arc pattern), always resident in full
- *  - anchors:   anchored arcs by id, always resident in full
+ * a gated layer with three tiers:
+ *  - templates: template rows by prefix, always resident in full
+ *  - anchors:   anchored rows by id, always resident in full
  *  - recent:    every instance within the recent-day window, full content
- * cc surface returns null (harness visible, restricted content never enters).
+ * the cc surface returns null (this layer is not injected there).
  */
 export interface RestrictedLayer {
   templates: RestrictedItem[];
@@ -67,25 +66,25 @@ export interface RestrictedLayer {
   recent: RestrictedItem[];
 }
 
-// Anchored restricted memories pinned by id (titles may change, ids do not). Always resident.
+// Anchored rows pinned by id (titles may change, ids do not). Always resident.
 // Populate with your own memory ids via config; ships empty.
 const RESTRICTED_ANCHOR_IDS: string[] = [];
 const DEFAULT_RECENT_DAYS = 20;
 
-// Title prefixes used to identify restricted rows. Override via config for your own scheme.
+// Title prefixes used to identify rows for this layer. Override via config for your own scheme.
 const RESTRICTED_TEMPLATE_PREFIX = "[restricted template]";
 const RESTRICTED_INSTANCE_PREFIXES: string[] = [];
 
 /**
- * restricted injection layer. One logic, three visibility tiers:
- *  - cc      → null (harness visible, no restricted content)
- *  - others  → templates (full) + anchored arcs (full) + every recent instance (full)
+ * a gated injection layer. One logic, three tiers:
+ *  - cc      → null (layer not injected on this surface)
+ *  - others  → templates (full) + anchored rows (full) + every recent instance (full)
  */
 export async function loadRestrictedLayer(
   prisma: PrismaClient,
   opts: ContextOpts,
 ): Promise<RestrictedLayer | null> {
-  if (opts.surface === "cc") return null; // harness visible → restricted content does not enter cc
+  if (opts.surface === "cc") return null; // this layer is not injected on the cc surface
 
   const days = opts.recentRestrictedDays ?? DEFAULT_RECENT_DAYS;
   const since = new Date(Date.now() - days * MS_PER_DAY);
@@ -113,7 +112,7 @@ export async function loadRestrictedLayer(
           },
           select,
           orderBy: { createdAt: "desc" },
-          // all within the window — restricted content is infrequent, no count cap
+          // all within the window — such rows are infrequent, no count cap
         })
       : Promise.resolve([] as RestrictedItem[]),
   ]);
@@ -150,7 +149,7 @@ export const registerDefaults: RegisterDefaults = {
 
 // ── anchors layer: CORE / BOUNDARY / PREFERENCE top-level invariants ─────
 // Threshold is the union of both sides: CORE imp≥4, BOUNDARY imp≥4, PREFERENCE no threshold.
-// Excludes [cred_] (credentials never enter the injection surface) and [private_ (loadPrivate).
+// Excludes [cred_] (credential rows are filtered out) and [private_ (handled by loadPrivate).
 export interface AnchorItem {
   memoryType: string;
   title: string;
@@ -174,14 +173,14 @@ export async function loadAnchors(prisma: PrismaClient): Promise<AnchorItem[]> {
   });
 }
 
-// ── private layer (filtered out on cc): anchored coreProfile keys + [private_ memories ──
+// ── private layer (gated on cc): anchored coreProfile keys + [private_ memories ──
 // coreProfile keys that anchor the private layer. Populate via config; ships empty.
 const PRIVATE_ANCHOR_KEYS: string[] = [];
 export interface PrivateAnchor { key: string; title: string; content: string; importance: number }
 export interface PrivateMem { memoryType: string; title: string; content: string; summary: string | null; importance: number }
 export interface PrivateLayer { anchors: PrivateAnchor[]; mems: PrivateMem[] }
 export async function loadPrivate(prisma: PrismaClient, opts: ContextOpts): Promise<PrivateLayer | null> {
-  if (opts.surface === "cc") return null; // harness visible → private content does not enter cc
+  if (opts.surface === "cc") return null; // this layer is not injected on the cc surface
   const [anchors, mems] = await Promise.all([
     PRIVATE_ANCHOR_KEYS.length
       ? prisma.coreProfile.findMany({
@@ -346,16 +345,22 @@ export function buildPersona(opts: {
 }
 
 // ── unified cross-surface timeline: text + chatroom as one conversation line ──
-export interface MergedChatMsg { role: "user" | "assistant"; text: string; surface: "tg" | "chat"; at: Date }
+export interface MergedChatMsg { role: "user" | "assistant"; text: string; surface: "tg" | "chat"; at: Date; threadId?: string }
 // sinceTs given = anchored mode: pull primary + cross-chat CHAT rows from sinceTs onward, merge by time.
 //   The prefix grows append-only (the anchor does not move → stable cached prefix → cache_read hits),
 //   unlike a "latest N rows" window that slides off the oldest end and invalidates the cache each turn.
 // sinceTs omitted = legacy "latest take rows" mode (other callers may still use it).
-export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: Date): Promise<MergedChatMsg[]> {
-  const whereFor = (source: string) =>
-    sinceTs
-      ? { eventType: "CHAT", source, createdAt: { gte: sinceTs } }
-      : { eventType: "CHAT", source };
+// threadId given = restrict to one conversation thread (front-end thread view);
+//   omitted = all threads merged into one line (model continuity / reentry).
+export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: Date, threadId?: string): Promise<MergedChatMsg[]> {
+  const whereFor = (source: string) => ({
+    eventType: "CHAT",
+    source,
+    ...(sinceTs ? { createdAt: { gte: sinceTs } } : {}),
+    // threadId lives inside the JSON value (no schema column) → coarse `contains`
+    // pre-filter; the exact match is re-checked after parse below.
+    ...(threadId ? { value: { contains: `"threadId":"${threadId}"` } } : {}),
+  });
   const fetchTake = sinceTs ? 1500 : take; // anchored mode pulls up to the cap; the caller trims by token budget
   const [tg, web] = await Promise.all([
     prisma.event.findMany({ where: whereFor(CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { value: true, createdAt: true } }),
@@ -365,10 +370,43 @@ export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: 
     rows.flatMap((r) => {
       const p = parseChatEvent(r.value);
       if (!p) return [];
-      return [{ role: p.role, text: p.text, surface, at: r.createdAt }];
+      if (threadId && p.threadId !== threadId) return []; // exact-match guard over the coarse filter
+      return [{ role: p.role, text: p.text, surface, at: r.createdAt, threadId: p.threadId }];
     });
   const merged = [...parse(tg, "tg"), ...parse(web, "chat")].sort((a, b) => a.at.getTime() - b.at.getTime());
   return sinceTs ? merged : merged.slice(-take);
+}
+
+// Distinct conversation threads for a front-end history list. Groups recent CHAT
+// events by threadId; title = the thread's first user line. Untagged rows (no
+// threadId) are skipped — only explicitly threaded conversations are listed.
+export interface ChatThread { threadId: string; title: string; lastAt: Date; count: number }
+export async function loadChatThreads(
+  prisma: PrismaClient,
+  opts: { lookbackDays?: number; limit?: number } = {},
+): Promise<ChatThread[]> {
+  const since = new Date(Date.now() - (opts.lookbackDays ?? 90) * MS_PER_DAY);
+  const rows = await prisma.event.findMany({
+    where: { eventType: "CHAT", source: { in: [CHAT_SOURCE, CROSS_CHAT_SOURCE] }, createdAt: { gte: since } } as never,
+    orderBy: { createdAt: "asc" },
+    select: { value: true, createdAt: true },
+  });
+  const map = new Map<string, { title: string; lastAt: Date; count: number }>();
+  for (const r of rows) {
+    const p = parseChatEvent(r.value);
+    if (!p || !p.threadId) continue;
+    const e = map.get(p.threadId);
+    if (!e) map.set(p.threadId, { title: p.role === "user" ? p.text.slice(0, 60) : "", lastAt: r.createdAt, count: 1 });
+    else {
+      e.count++;
+      e.lastAt = r.createdAt;
+      if (!e.title && p.role === "user") e.title = p.text.slice(0, 60);
+    }
+  }
+  return [...map.entries()]
+    .map(([threadId, v]) => ({ threadId, title: v.title, lastAt: v.lastAt, count: v.count }))
+    .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
+    .slice(0, opts.limit ?? 50);
 }
 
 // Merged timeline → API messages: merge consecutive same-role rows (the API requires

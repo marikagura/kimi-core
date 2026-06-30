@@ -138,7 +138,21 @@ curl -X POST "$KIMI_URL/events" \
 
 只接受“外部信号”这几类：`APP_OPEN` / `MANUAL_NOTE` / `SYSTEM`（其余是引擎内部事件，不开放摄入）。`source` 随你标。curl 能跑，就什么客户端都能跑。
 
-### 5.3 看它自己动起来：`demo-feed`
+### 5.3 对话摄入 `POST /chat`（与 `/events` 分开）
+
+对话不走 `/events`（那里 value 是裸字符串、不进合并时间线 / digest）。逐条发一条消息，后端组装成合规的 CHAT event（`{role,text}` JSON）、默认落主对话 source，于是被跨面合并时间线（`loadMergedChat`）和 digest 一起覆盖：
+
+```bash
+curl -X POST "$KIMI_URL/chat" \
+  -H "Authorization: Bearer $KIMI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"user","text":"在火山口拍到云海了","source":"my-phone"}'
+# → {"ok":true,"id":"…","at":"…"}
+```
+
+逐条发，不是每轮 batch：前端发送时发用户那条、本地生成完发助手那条；`source` 区分多端、统一被合并读。MCP-native 前端（如 kimi-room）走同一条 `/mcp`：`chat_write` 追加、`chat_read` 把合并时间线读回来渲染（另一台设备写的也读得到）。多线程：写时带 `threadId` 把消息归到一条对话线；`chat_read` 给 `threadId` 只读那条（不给 = 全量合并）；`chat_threads` 列出所有线程（跨设备：别处建的线也列得到）。
+
+### 5.4 看它自己动起来：`demo-feed`
 
 不想接任何真实源，也能现场演示。`demo-feed` 扩展（`extensions/demo-feed/feed.ts`）按定时把**虚构**信号写进 `events` 脊柱 + room 渲染的 collection（calendar / keepsake / chat）：
 

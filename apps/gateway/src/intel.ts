@@ -13,7 +13,7 @@ import { checkDimHealth } from "./lib/dim-health.js";
 import { checkCurationHealth } from "./lib/curation-health.js";
 import { roleModel } from "./lib/models.js";
 import { chatCompletion } from "./lib/llm.js";
-import { CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
+import { CHAT_SOURCE, CROSS_CHAT_SOURCE, CHAT_DIGEST_WHERE, parseChatEvent } from "@kimi/context-core";
 import { firstJsonObject } from "./lib/json-extract.js";
 import { parseDigest, parseSessionScore, type Digest } from "./lib/llm-schemas.js";
 import { errMessage } from "./lib/err.js";
@@ -285,9 +285,22 @@ const TOPIC_SLUG = process.env.INTEL_TOPIC_SLUG || "";
 // Dialogue digest layer — scans CHAT events in a recent window, groups them into
 // sessions by an idle gap, and compresses each session into one EPISODE memory.
 // dedup via title prefix (date-based); the first run backfills recent history.
+//
+// Runs once per chat source: the primary CHAT_SOURCE always, plus the cross
+// surface (a second front end) only when GROUND_CROSS_CHAT_SOURCE is configured.
+// srcTag disambiguates the per-session title + score dedup so two surfaces' same-
+// time sessions never collide; the primary's srcTag is "" so existing titles stay
+// stable (no history re-digest).
+export type DigestSource = { source: string; srcTag: string };
+export const DIGEST_SOURCES: DigestSource[] = [
+  { source: CHAT_SOURCE, srcTag: "" },
+  ...(process.env.GROUND_CROSS_CHAT_SOURCE ? [{ source: CROSS_CHAT_SOURCE, srcTag: ` ·${CROSS_CHAT_SOURCE}` }] : []),
+];
 export async function scanDialogueDigests(
   cutoffStart?: Date,
   cutoffEnd?: Date,
+  source: string = CHAT_SOURCE,
+  srcTag: string = "",
 ): Promise<{ created: number; skipped: number; failed: number }> {
   const now = Date.now();
   // No fixed lag; completeness is enforced by the session idle gate below.
@@ -299,7 +312,7 @@ export async function scanDialogueDigests(
   const events = await prisma.event.findMany({
     where: {
       eventType: "CHAT",
-      source: CHAT_SOURCE,
+      source,
       createdAt: { gte: _cutoffStart, lt: _cutoffEnd },
     },
     orderBy: { createdAt: "asc" },
@@ -351,7 +364,7 @@ export async function scanDialogueDigests(
     }
     if (parsed.length < MIN_TURNS) { skipped++; continue; }
 
-    const titlePrefix = `[chat ${dateStr} ${startHHMM}]`;
+    const titlePrefix = `[chat ${dateStr} ${startHHMM}${srcTag}]`;
 
     // session score collected from the digest's v/a output
     let scoreV: number | null = null, scoreA: number | null = null, scoreNote = "";
@@ -470,6 +483,7 @@ Output JSON (JSON only, no markdown fence):
       await writeSessionScore({
         dateStr,
         startHHMM,
+        srcTag,
         valence: scoreV,
         arousal: scoreA,
         note: scoreNote,
@@ -593,9 +607,13 @@ async function digestTick() {
   if (digestRunning) { console.log("[digest tick] skip — previous round still running"); return; }
   digestRunning = true;
   try {
-    const r = await scanDialogueDigests();
-    if (r.created > 0 || r.failed > 0) {
-      console.log(`[digest tick] +${r.created} created, ${r.skipped} skipped, ${r.failed} failed`);
+    let created = 0, skipped = 0, failed = 0;
+    for (const src of DIGEST_SOURCES) {
+      const r = await scanDialogueDigests(undefined, undefined, src.source, src.srcTag);
+      created += r.created; skipped += r.skipped; failed += r.failed;
+    }
+    if (created > 0 || failed > 0) {
+      console.log(`[digest tick] +${created} created, ${skipped} skipped, ${failed} failed`);
     }
   } catch (e: unknown) { console.error("[digest tick] err:", errMessage(e)); }
   finally { digestRunning = false; }

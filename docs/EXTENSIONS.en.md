@@ -138,7 +138,21 @@ curl -X POST "$KIMI_URL/events" \
 
 It accepts only the "external signal" kinds: `APP_OPEN` / `MANUAL_NOTE` / `SYSTEM` (the rest are engine-internal events, not open to ingest). Label `source` however you like. If curl works, any client works.
 
-### 5.3 Watch it move on its own: `demo-feed`
+### 5.3 Conversational ingest `POST /chat` (separate from `/events`)
+
+Conversation does not go through `/events` (there the value is opaque text and never enters the merged timeline / digest). Post one message at a time; the backend assembles a compliant CHAT event (`{role,text}` JSON) and defaults it to the primary chat source, so it is covered by both the cross-surface merged timeline (`loadMergedChat`) and the digest:
+
+```bash
+curl -X POST "$KIMI_URL/chat" \
+  -H "Authorization: Bearer $KIMI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"user","text":"cloud sea from the crater rim","source":"my-phone"}'
+# → {"ok":true,"id":"…","at":"…"}
+```
+
+One message per call, not a per-turn batch: a front end posts the user message on send and the assistant message once its own generation finishes; `source` separates surfaces while everything merges on read. MCP-native front ends (e.g. kimi-room) do the same over the `/mcp` channel — `chat_write` to append, `chat_read` to pull the merged timeline back for rendering (so one device sees what another wrote). Threads: pass `threadId` on write to group a conversation; `chat_read` with `threadId` returns just that thread (omit for all merged); `chat_threads` lists threads (incl. ones started on another device).
+
+### 5.4 Watch it move on its own: `demo-feed`
 
 You can demo this live without wiring any real source. The `demo-feed` extension (`extensions/demo-feed/feed.ts`) writes **fictional** signals on a timer into the `events` spine plus the collections the room renders (calendar / keepsake / chat):
 

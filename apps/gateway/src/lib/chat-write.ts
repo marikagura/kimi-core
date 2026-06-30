@@ -69,3 +69,17 @@ export async function writeChatEvent(input: ChatWriteInput): Promise<ChatWriteRe
     throw err;
   }
 }
+
+/**
+ * Delete ONE chat message by its CHAT event id. This is the engine's only delete path
+ * and it is deliberately narrow: it exists solely so a front end's "retry" can drop the
+ * reply it is replacing — otherwise the stale answer lingers in the cross-device
+ * timeline and gets digested into memory. Scoped to CHAT events (a non-chat id is a
+ * no-op), and it removes only the raw chat row: an already-written digest memory is
+ * untouched. No thread or bulk delete — this is a memory engine; the one thing it
+ * forgets is a reply you are actively redoing.
+ */
+export async function deleteChatEvent(id: string): Promise<{ deleted: number }> {
+  const r = await prisma.event.deleteMany({ where: { id, eventType: EventType.CHAT } });
+  return { deleted: r.count };
+}

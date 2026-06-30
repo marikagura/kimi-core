@@ -8,7 +8,7 @@ import { z } from "zod";
 import prisma from "./db.js";
 import { localDateTime } from "./time.js";
 import { CHAT_DIGEST_WHERE, CHAT_DIGEST_SHARED, loadMergedChat, loadChatThreads } from "@kimi/context-core";
-import { writeChatEvent } from "./lib/chat-write.js";
+import { writeChatEvent, deleteChatEvent } from "./lib/chat-write.js";
 import { isColdStartExcluded } from "./lib/reentry-filter.js";
 import { renderAnchor } from "./tools-shared.js";
 
@@ -18,7 +18,7 @@ export function registerReentryTools(server: McpServer) {
   // for new messages. Distinct from reentry, which builds full cold-start context.
   server.tool(
     "chat_read",
-    "Read recent conversation as one cross-surface timeline (merged by the server clock). Returns JSON {role,text,surface,at,threadId}[] in a text block — for a front end to render history a second device wrote, or to poll for new messages since a timestamp. Pass threadId to read one thread; omit for all threads merged. Distinct from reentry (which builds full cold-start context).",
+    "Read recent conversation as one cross-surface timeline (merged by the server clock). Returns JSON {id,role,text,surface,at,threadId}[] in a text block — for a front end to render history a second device wrote, or to poll for new messages since a timestamp. The id is the CHAT event id (pass it to chat_delete). Pass threadId to read one thread; omit for all threads merged. Distinct from reentry (which builds full cold-start context).",
     {
       take: z.number().int().positive().max(500).optional().describe("max messages to return (default 40)"),
       sinceISO: z.string().optional().describe("ISO timestamp; return messages at/after it (incremental polling)"),
@@ -33,7 +33,7 @@ export function registerReentryTools(server: McpServer) {
           {
             type: "text",
             text: JSON.stringify(
-              msgs.map((m) => ({ role: m.role, text: m.text, surface: m.surface, at: m.at.toISOString(), threadId: m.threadId })),
+              msgs.map((m) => ({ id: m.id, role: m.role, text: m.text, surface: m.surface, at: m.at.toISOString(), threadId: m.threadId })),
             ),
           },
         ],
@@ -99,6 +99,26 @@ export function registerReentryTools(server: McpServer) {
           },
         ],
       };
+    },
+  );
+
+  // chat_delete — the engine's one narrow delete path: remove a single chat message by
+  // id. It exists ONLY so a front end's retry can drop the reply it is replacing, so the
+  // stale answer doesn't linger in the cross-device timeline or get digested. Scoped to
+  // CHAT events; the raw row goes, an already-written digest memory stays. No thread or
+  // bulk delete — a memory engine forgets only the reply you're actively redoing.
+  server.tool(
+    "chat_delete",
+    "Delete one chat message by id (from chat_read / chat_write). The single, deliberately narrow delete path — it exists only so a front end's retry can drop the reply it is replacing, so the stale answer doesn't linger in the cross-device timeline or get digested. Scoped to CHAT events; removes the raw chat row only, not an already-written digest memory. Returns JSON {ok,deleted}.",
+    {
+      id: z.string().describe("CHAT event id to delete — the reply a retry is replacing (from chat_read/chat_write)"),
+    },
+    async ({ id }) => {
+      if (!id) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "id required" }) }] };
+      }
+      const result = await deleteChatEvent(id);
+      return { content: [{ type: "text", text: JSON.stringify({ ok: true, deleted: result.deleted }) }] };
     },
   );
 

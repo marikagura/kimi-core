@@ -8,6 +8,7 @@ import {
   CHAT_SOURCE,
   CROSS_CHAT_SOURCE,
 } from "@kimi/context-core";
+import { deleteChatEvent } from "./lib/chat-write.js";
 
 // DB integration — the chat-sync + threading path behind cross-device chat:
 // per-message CHAT events (POST /chat / chat_write) → merged read (chat_read /
@@ -77,5 +78,38 @@ local("I — chat-sync + threading (cross-device)", () => {
     expect(ta?.count).toBe(4);
     expect(ta?.title).toBe("A1 from device-1"); // first user line is the thread title
     expect(tb?.count).toBe(1);
+  });
+});
+
+local("II — chat_delete (deleteChatEvent)", () => {
+  const tag = `del-${Date.now()}`;
+  const T1 = `${tag}-t1`;
+  const base = Date.now() - 3600_000;
+  const t = (n: number) => new Date(base + n * 60_000);
+  const mk = (role: "user" | "assistant", text: string, threadId: string, source: string, at: Date) =>
+    prisma.event.create({
+      data: { eventType: "CHAT", value: buildChatEventValue(role, text, { threadId }), source, createdAt: at },
+    });
+
+  afterAll(async () => {
+    await prisma.event.deleteMany({ where: { value: { contains: tag } } }); // CHAT rows + the SYSTEM probe
+    await prisma.$disconnect();
+  });
+
+  it("deletes one message by id (scoped to CHAT), leaving the rest; the id is exposed on read", async () => {
+    const keep = await mk("user", "keep me", T1, CHAT_SOURCE, t(1));
+    const bad = await mk("assistant", "bad reply", T1, CHAT_SOURCE, t(2)); // the reply a retry replaces
+    const r = await deleteChatEvent(bad.id);
+    expect(r.deleted).toBe(1);
+    const left = await loadMergedChat(prisma, 50, undefined, T1);
+    expect(left.map((m) => m.text)).toEqual(["keep me"]);
+    expect(left[0].id).toBe(keep.id); // chat_read exposes the CHAT event id so a front end can target the delete
+  });
+
+  it("does not delete a non-CHAT event by id (scoped to CHAT)", async () => {
+    const sys = await prisma.event.create({ data: { eventType: "SYSTEM", value: `${tag}-sys`, source: "test" } });
+    const r = await deleteChatEvent(sys.id);
+    expect(r.deleted).toBe(0);
+    expect(await prisma.event.findUnique({ where: { id: sys.id } })).not.toBeNull();
   });
 });

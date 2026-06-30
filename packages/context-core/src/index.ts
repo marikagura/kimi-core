@@ -345,7 +345,7 @@ export function buildPersona(opts: {
 }
 
 // ── unified cross-surface timeline: text + chatroom as one conversation line ──
-export interface MergedChatMsg { role: "user" | "assistant"; text: string; surface: "tg" | "chat"; at: Date; threadId?: string }
+export interface MergedChatMsg { id: string; role: "user" | "assistant"; text: string; surface: "tg" | "chat"; at: Date; threadId?: string }
 // sinceTs given = anchored mode: pull primary + cross-chat CHAT rows from sinceTs onward, merge by time.
 //   The prefix grows append-only (the anchor does not move → stable cached prefix → cache_read hits),
 //   unlike a "latest N rows" window that slides off the oldest end and invalidates the cache each turn.
@@ -369,7 +369,7 @@ export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: 
     prisma.event.findMany({ where: whereFor(CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { id: true, value: true, createdAt: true } }),
     prisma.event.findMany({ where: whereFor(CROSS_CHAT_SOURCE) as never, orderBy: { createdAt: "desc" }, take: fetchTake, select: { id: true, value: true, createdAt: true } }),
   ]);
-  const parse = (rows: { id: string; value: string | null; createdAt: Date }[], surface: "tg" | "chat"): (MergedChatMsg & { id: string })[] =>
+  const parse = (rows: { id: string; value: string | null; createdAt: Date }[], surface: "tg" | "chat"): MergedChatMsg[] =>
     rows.flatMap((r) => {
       const p = parseChatEvent(r.value);
       if (!p) return [];
@@ -380,8 +380,7 @@ export async function loadMergedChat(prisma: PrismaClient, take = 40, sinceTs?: 
   // cross-device contention case, where two surfaces write within one ms and a
   // createdAt-only sort left the order to concat/sort stability (always tg-before-chat).
   const merged = [...parse(tg, "tg"), ...parse(web, "chat")]
-    .sort((a, b) => a.at.getTime() - b.at.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map(({ id: _id, ...m }) => m);
+    .sort((a, b) => a.at.getTime() - b.at.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return sinceTs ? merged : merged.slice(-take);
 }
 

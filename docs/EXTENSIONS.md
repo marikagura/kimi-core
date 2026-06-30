@@ -150,7 +150,7 @@ curl -X POST "$KIMI_URL/chat" \
 # → {"ok":true,"id":"…","at":"…"}
 ```
 
-逐条发，不是每轮 batch：前端发送时发用户那条、本地生成完发助手那条；`source` 区分多端、统一被合并读。MCP-native 前端（如 kimi-room）走同一条 `/mcp`：`chat_write` 追加、`chat_read` 把合并时间线读回来渲染（另一台设备写的也读得到）。多线程：写时带 `threadId` 把消息归到一条对话线；`chat_read` 给 `threadId` 只读那条（不给 = 全量合并）；`chat_threads` 列出所有线程（跨设备：别处建的线也列得到）。
+逐条发，不是每轮 batch：前端发送时发用户那条、本地生成完发助手那条；`source` 区分多端、统一被合并读。MCP-native 前端（如 kimi-room）走同一条 `/mcp`：`chat_write` 追加、`chat_read` 把合并时间线读回来渲染（另一台设备写的也读得到）。多线程：写时带 `threadId` 把消息归到一条对话线；`chat_read` 给 `threadId` 只读那条（不给 = 全量合并）；`chat_threads` 列出所有线程（跨设备：别处建的线也列得到）。`chat_delete` 按 `id`（`chat_read`/`chat_write` 返回的）删一条 —— 唯一的删除口，专给前端「重试」用：把要替换掉的旧回复删掉，免得它残留在其他设备的时间线、或被总结进 digest。只动这一条 CHAT raw event，已经写成的 digest 记忆不碰；没有按线程 / 批量删。
 
 ### 5.4 看它自己动起来：`demo-feed`
 

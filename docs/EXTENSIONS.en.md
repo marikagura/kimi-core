@@ -150,7 +150,7 @@ curl -X POST "$KIMI_URL/chat" \
 # → {"ok":true,"id":"…","at":"…"}
 ```
 
-One message per call, not a per-turn batch: a front end posts the user message on send and the assistant message once its own generation finishes; `source` separates surfaces while everything merges on read. MCP-native front ends (e.g. kimi-room) do the same over the `/mcp` channel — `chat_write` to append, `chat_read` to pull the merged timeline back for rendering (so one device sees what another wrote). Threads: pass `threadId` on write to group a conversation; `chat_read` with `threadId` returns just that thread (omit for all merged); `chat_threads` lists threads (incl. ones started on another device).
+One message per call, not a per-turn batch: a front end posts the user message on send and the assistant message once its own generation finishes; `source` separates surfaces while everything merges on read. MCP-native front ends (e.g. kimi-room) do the same over the `/mcp` channel — `chat_write` to append, `chat_read` to pull the merged timeline back for rendering (so one device sees what another wrote). Threads: pass `threadId` on write to group a conversation; `chat_read` with `threadId` returns just that thread (omit for all merged); `chat_threads` lists threads (incl. ones started on another device). `chat_delete` removes one message by its `id` (from `chat_read` / `chat_write`) — the one narrow delete path, for a front end's retry: drop the reply being replaced so it doesn't linger in another device's timeline or get digested. It removes only that raw CHAT event; an already-written digest memory stays. No per-thread or bulk delete.
 
 ### 5.4 Watch it move on its own: `demo-feed`
 

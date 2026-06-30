@@ -90,7 +90,7 @@ Four, one per shape. **This is a demonstration, not for you — replace it.**
 | example key | example name | shape | backing |
 |---|---|---|---|
 | `companionship` | companionship | `symmetric` | positive EPISODEs + a last-chat presence anchor |
-| `desire` | desire | `refractory` | RESTRICTED memories |
+| `desire` | desire | `refractory` | a dedicated memory class |
 | `deep_talk` | deep talk | `bonding` | memories under the `depth-topic` topic |
 | `owed` | owed | `owed` | memories under the `owed` topic |
 

@@ -13,7 +13,7 @@ For the epistemic layer (retrieval-first / no hallucinated recall / attribution 
 > **Status: engine complete, with tests and docs.** hybrid retrieval, self-drive / concern, the
 > reproducible eval, conversational onboarding, reference delivery providers, and the adversarial self-audit
 > harness have all landed (tsc + test + scrub run in CI). The scope is **personal 1:1** — multi-user /
-> production and a SQLite "lite" mode are explicit **non-goals** (see the [ROADMAP](./ROADMAP.en.md)). The
+> production is an explicit **non-goal**. The
 > autonomous wake daemon is wired and unit-tested; actually running it needs a Claude subscription token +
 > a two-process setup (see "Running the autonomous daemon" below).
 
@@ -89,7 +89,7 @@ One `DATABASE_URL`, three ways to run it — same code, no extra backend:
 - **Self-hosted Postgres.** Point `DATABASE_URL` at your own server. Needs the `vector` extension; `pgroonga` is optional (CJK BM25 — falls back to `pg_trgm` without it).
 - **Managed Postgres (Supabase / Neon / RDS / …).** Same `DATABASE_URL`, just the hosted connection string. Supabase ships `pgvector` built in; the engine speaks plain Postgres over Prisma, so no vendor SDK is involved.
 
-All three above (Supabase included) work today. A zero-dependency SQLite "lite" backend is a **non-goal** (these three cover the personal 1:1 case; rationale in the [ROADMAP](./ROADMAP.en.md)).
+All three above (Supabase included) work today — they cover the personal 1:1 case.
 
 **Privacy boundary, stated plainly:** in local mode your **storage** (Postgres) never leaves the machine, but embeddings and LLM calls go to whatever endpoints you configure (`LLM_BASE_URL` / `EMBED_BASE_URL`) — so the memory text that gets embedded / reasoned over does go to those APIs. "Data never leaves" refers to the storage layer only. For fully-local, point the embedding / LLM endpoints at your own self-hosted ones.
 

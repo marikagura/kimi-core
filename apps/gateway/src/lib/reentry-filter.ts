@@ -1,10 +1,9 @@
 // ============================================================================
 // Cold-start injection filters — externalized config.
 //
-// reentry / reentry_delta are cold-start surfaces (harness-visible, also reached
-// by background daemons). Some rows should never enter that injection: pure
-// technical noise, plaintext credentials, and any private / sensitive content
-// classes a deployment wants to keep out of cold start.
+// reentry / reentry_delta build cold-start context (also reached by background
+// daemons). Some rows should not enter that injection: e.g. pure technical
+// noise, or any content classes a deployment chooses to keep out of cold start.
 //
 // The MECHANISM (prefix filtering, title filtering, a content predicate) lives
 // in the tool code. The actual lists / predicates are deployment-private, so
@@ -21,9 +20,8 @@
 export const TECH_ONLY_TITLES: string[] = [];
 
 /**
- * Title prefixes whose rows are excluded from cold-start injection (e.g. a
- * plaintext-credential prefix, or any sensitive content class your deployment
- * tags by prefix). Ships empty.
+ * Title prefixes whose rows are excluded from cold-start injection (any content
+ * class your deployment tags by prefix). Ships empty.
  */
 export const COLD_START_EXCLUDE_PREFIXES: string[] = [];
 
@@ -35,8 +33,8 @@ export const COLD_START_EXCLUDE_SUBSTRINGS: string[] = [];
 
 /**
  * Content predicate gating cold-start injection. Return true to EXCLUDE a row
- * (e.g. it contains a sensitive content class). Ships as a no-op (never
- * excludes) so the engine runs without a private denylist. Override to wire a
+ * (e.g. it matches a class your deployment excludes). Ships as a no-op (never
+ * excludes) so the engine runs with no denylist. Override to wire a
  * deployment-specific classifier.
  */
 export function coldStartExcludeContent(_text: string): boolean {

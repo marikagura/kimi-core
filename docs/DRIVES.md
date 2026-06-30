@@ -71,7 +71,7 @@ selfDrive:
 | 范例 key | 范例名 | shape | 支撑 |
 |---|---|---|---|
 | `companionship` | 陪伴 | `symmetric` | 正向 EPISODE + 最近对话在场锚 |
-| `desire` | 欲望 | `refractory` | RESTRICTED 记忆 |
+| `desire` | 欲望 | `refractory` | 一类专属记忆 |
 | `deep_talk` | 深谈 | `bonding` | `depth-topic` 这个 topic 下的记忆 |
 | `owed` | 债务渴求 | `owed` | `owed` 这个 topic 下的记忆 |
 

@@ -43,12 +43,11 @@ export type Components = {
 
 // scope: which fact stores the hybrid scorer reaches.
 //   'default' — memories table only, RESTRICTED excluded (the live/golden path).
-//               Public, non-audit surfaces use this.
 //   'full'    — for the general search path (no type/topic filter), also folds
-//               in observations + core_profile (incl. sensitive rows) and stops
-//               excluding RESTRICTED memories, so a single retrieval reaches every
-//               recallable fact. The private audit/eval scope. Public-surface
-//               exposure is gated at the surface filter layer, NOT here.
+//               in observations + core_profile and stops excluding RESTRICTED,
+//               so a single retrieval reaches every recallable fact. The
+//               audit/eval scope. Per-surface composition is decided at the
+//               loader/format layer, NOT here.
 export type ScoreOpts = {
   limit?: number;
   memoryType?: MemoryType;

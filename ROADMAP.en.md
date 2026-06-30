@@ -19,7 +19,3 @@ A **personal, single-user (1:1) agent memory OS** — not multi-user / productio
 
 - **More delivery / search backend presets.** Reference implementations ship (a webhook notifier, an http search provider); more ready-to-use backends (Slack / Discord / ntfy presets, specific search-API adapters) are welcome but not required. EXPLORE's suggestion content stays empty by design (the persona layer).
 - **Publish the eval numbers across versions.** Post the `retrieval_eval` trend per release — display only, no engine impact.
-
-## Non-goals (deliberately not done)
-
-- **SQLite / a zero-dependency "lite" mode — not doing it.** The three run paths today — local docker, self-hosted Postgres, managed Postgres (Supabase / Neon / … anything with `pgvector`) — already cover the single-user personal case. SQLite lite would serve a specific subset of users (won't touch docker, wants fully-local zero-server, and is semi-technical); the cost is a **second retrieval implementation** on SQLite (sqlite-vec + FTS5) mirroring the Postgres raw SQL (pgvector `<=>` / pg_trgm / pgroonga) — a second scoring source that can diverge from the repo's single shared scorer. The decision not to do it is based on the maintenance cost outweighing the benefit for this subset.

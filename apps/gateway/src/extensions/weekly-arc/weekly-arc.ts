@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { Prisma } from "@prisma/client";
 import prisma from "../../db.js";
 import { buildPersona } from "@kimi/context-core";
+import { loadPersonaDoc } from "../../lib/persona.js";
 import { callLLMShort } from "../../lib/llm.js";
 import { roleModel } from "../../lib/models.js";
 import { errMessage } from "../../lib/err.js";
@@ -37,10 +38,10 @@ const TZ = process.env.KIMI_CRON_TZ || DEFAULT_TZ;
 // in, not run as-is. Supply a persona + edit ARC_SCAFFOLD to make it yours.
 const ARC_SCAFFOLD = `You are writing a short weekly narrative — an "arc", not a report. Connect this week's episodes into one flat, first-person narrative (about 200–400 words): where things stood at the start of the week, where they ended, and the turning points between. Let the week's different threads — work, relationships, whatever the material holds — show how they intertwine. If the material contains one or two especially heavy lines, you may quote them (only if present — never invent). End on what is still open (the carryover), not on a conclusion. Avoid: summarizing clichés, aphorisms, tidy "this week taught us" wrap-ups, and parallel-construction verdicts that fold two things into one sentence. Write only what is in the material; when unsure, leave it out. Output the arc body only — no title, no preamble.`;
 
-// Voice = your persona (the empty default until you configure persona.md) + the
-// scaffold above. No persona → a generic arc; this stays a demo until filled in.
+// Voice = your persona (persona.md read via lib/persona.ts; empty until you run
+// `npm run init`) + the scaffold above. No persona → a generic arc.
 function buildArcSystem(): string {
-  const persona = buildPersona({ surface: "tg", registersText: "" }).trim();
+  const persona = buildPersona({ surface: "tg", registersText: "", loadPersonaDoc }).trim();
   return persona ? `${persona}\n\n${ARC_SCAFFOLD}` : ARC_SCAFFOLD;
 }
 

@@ -12,6 +12,7 @@ import { firstJsonObject } from "./lib/json-extract.js";
 import { errMessage } from "./lib/err.js";
 import { enabledExtensions } from "./lib/enabled-extensions.js";
 import { loadExtensionActions } from "./lib/extensions.js";
+import { loadPersonaDoc } from "./lib/persona.js";
 
 // ============================================================================
 // wake daemon — a timer-driven, read-only agent loop.
@@ -93,8 +94,7 @@ const DAEMON_TOOLS = [
   "mcp__kimi__event_read", // recent signals / last wake
   "mcp__kimi__graph_walk", // relationship-graph traversal
   "mcp__kimi__entity_search", // look up a person/entity's context
-  "mcp__kimi__calendar_list", // schedule grounding
-  "mcp__kimi__event_log", // the ONLY permitted write: append-only event log
+  "mcp__kimi__event_log", // the ONLY permitted write: append-only event log (SYSTEM/DREAM only, see canUseTool)
 ];
 const DAEMON_TOOL_SET = new Set(DAEMON_TOOLS);
 
@@ -122,10 +122,11 @@ export function setNotifier(n: Notifier): void {
   notifier = n;
 }
 
-// Persona is external: buildPersona() from @kimi/context-core returns the empty
-// default unless a persona document is configured. No persona prose ships here.
+// Persona is external: persona.md (built by `npm run init`) is read via
+// lib/persona.ts and injected here — no persona prose ships in this repo.
+// File absent → empty persona, the engine still runs.
 function loadDaemonPersona(): string {
-  return buildPersona({ surface: "tg", registersText: "" });
+  return buildPersona({ surface: "tg", registersText: "", loadPersonaDoc });
 }
 
 // JSON marker -> event table (source=daemon_*) for observability.
@@ -261,11 +262,28 @@ async function wake(force = false) {
       allowedTools: DAEMON_TOOLS, // pre-approve these (skip the permission prompt)
       permissionMode: "dontAsk", // anything not pre-approved is denied, no prompt
       // Programmatic backstop against known allowlist-bypass bugs: deny any tool
-      // outside the read-only allowlist.
-      canUseTool: async (toolName: string) => {
-        if (DAEMON_TOOL_SET.has(toolName)) return { behavior: "allow" as const };
-        console.warn(`[daemon] denied non-allowlisted tool: ${toolName}`);
-        return { behavior: "deny" as const, message: `${toolName} is not in the read-only allowlist` };
+      // outside the read-only allowlist. The one write, event_log, is further
+      // constrained by eventType: CHAT / APP_OPEN rows are how presence readers
+      // (drive recency, ground truth, digests) know the USER was here, and
+      // THOUGHT_HIT / SCORE_FEEDBACK feed the drive / valence math — a wake that
+      // could write those would be forging its own inputs. SYSTEM and DREAM are
+      // the daemon's legitimate observation/diary lanes.
+      canUseTool: async (toolName: string, input: Record<string, unknown>) => {
+        if (!DAEMON_TOOL_SET.has(toolName)) {
+          console.warn(`[daemon] denied non-allowlisted tool: ${toolName}`);
+          return { behavior: "deny" as const, message: `${toolName} is not in the read-only allowlist` };
+        }
+        if (toolName === "mcp__kimi__event_log") {
+          const eventType = typeof input?.eventType === "string" ? input.eventType : "";
+          if (eventType !== "SYSTEM" && eventType !== "DREAM") {
+            console.warn(`[daemon] denied event_log eventType=${eventType || "(missing)"}`);
+            return {
+              behavior: "deny" as const,
+              message: "wake-loop event_log is limited to eventType SYSTEM or DREAM — CHAT/APP_OPEN/THOUGHT_*/SCORE_FEEDBACK are presence and drive inputs owned by the real surfaces",
+            };
+          }
+        }
+        return { behavior: "allow" as const };
       },
       // No resume — each tick is a fresh reentry (stateless: no carried-over
       // emotion across ticks, no spiral, no damping needed).

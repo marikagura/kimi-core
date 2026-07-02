@@ -28,6 +28,11 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://kimi:kimi@localhost:5432/kimi?schema=public
+      # Tests never call an LLM, but write paths stamp authorModel via the
+      # fail-closed roleModel() (throws when KIMI_MODEL is unset — by design).
+      # Locally vitest injects .env, which is gitignored, so CI needs a stamp
+      # value of its own. A dummy is honest here: it's a label, not an endpoint.
+      KIMI_MODEL: ci-dummy-model
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

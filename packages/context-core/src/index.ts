@@ -4,7 +4,7 @@
 // Design:
 //  - Each surface is one output of the same agent, not a separate system. So the
 //    "what to query + how to layer it" logic lives here exactly once; each output
-//    (turn-context.ts / chat-memory.ts / chatroom-reentry) is only a thin format layer.
+//    (a deployment's own turn-assembly / chat-memory layer) is only a thin format layer.
 //  - Prisma is injected (not bound to a client): each consumer passes its own client
 //    to avoid import-path conflicts and competing connection-pool instances.
 //  - surface selects which layers compose into its output. Some layers are gated

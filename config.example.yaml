@@ -7,7 +7,7 @@
 #    the drive roster (DRIVE_DIMS — a JSON array), the ground-truth source names,
 #    timezone, reranker / notifier / search-provider selection.
 #  - in-code defaults: retrieval weights/floors, self-drive time constants, concern
-#    thresholds, thoughtPool, dreamSlots, pricing — change these by editing the
+#    thresholds, thoughtPool — change these by editing the
 #    source noted per section, not by editing YAML.
 # Credentials (apiKey / token / connection string) live in env only, never here.
 # persona / private word lists / private thresholds do not belong in this file.
@@ -63,14 +63,6 @@ reranker:
 time:
   displayTimezone: "Asia/Shanghai"  # → KIMI_TZ env; IANA name, output timezone (default China)
   # (no separate offset knob — the numeric offset is derived from KIMI_TZ at runtime)
-
-# ---------- cost-log (tunable, adjust to current model prices) ----------
-# Unit price: per million tokens, USD (USD per 1M tokens). Update per actual rate card.
-pricing:
-  cacheRead: 0.5                 # cache-hit read-in
-  cacheWrite: 6.25               # cache write
-  freshInput: 5                  # non-cached input
-  output: 25                     # output
 
 # ---------- context-injection default register (tunable) ----------
 # Neutral default conversation register used when assembling context; adjust as needed.
@@ -159,12 +151,6 @@ thoughtPool:
     user: 1.0
     external: 0.6
     self_voice: 0.5
-
-# ---------- briefing-slot watchdog dream-slots (tunable) ----------
-dreamSlots:
-  slotHoursLocal: [9, 21]       # fixed local hours for briefing wake-up
-  graceMinutes: 12              # how long after a slot before it counts as "should have fired"
-  windowHours: 3                # misses past this window are not chased (no useless late push)
 
 # ---------- DATA-concern probe example domain (tunable, neutral default) ----------
 # An example probe projecting an external numeric data window into a DATA-grounded concern.

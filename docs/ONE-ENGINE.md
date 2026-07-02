@@ -30,7 +30,7 @@ KIMI_API_KEY=<与 core 相同> \
 npm install && npm run dev                  # → :3000
 
 # 3)（可选）manor 仪表盘
-cd ../cc-gild
+cd ../kimi-manor
 npm install @modelcontextprotocol/sdk
 KIMI_CORE_URL=http://localhost:3001 KIMI_API_KEY=<与 core 相同> node server.mjs   # → :7681/atelier
 ```

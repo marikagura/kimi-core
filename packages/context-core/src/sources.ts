@@ -72,7 +72,7 @@ export const CRED_TITLE_PREFIX = "[cred_]";
 export const PRIVATE_TITLE_PREFIX = "[private_";
 // Prisma OR clause matching either prefix — used as `NOT: SENSITIVE_TITLE_OR` to
 // keep both out of any injected surface. ONE definition so the readers (loadAnchors,
-// turn-context) can't drift: a prefix added here closes every injection path at once.
+// a turn-assembly layer) can't drift: a prefix added here closes every injection path at once.
 export const SENSITIVE_TITLE_OR = {
   OR: [{ title: { startsWith: CRED_TITLE_PREFIX } }, { title: { startsWith: PRIVATE_TITLE_PREFIX } }],
 };

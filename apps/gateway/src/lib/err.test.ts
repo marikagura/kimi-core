@@ -22,7 +22,7 @@ describe("errMessage", () => {
 // equal-or-safer (a clean string, never the undefined/object/throw the old idioms
 // could yield); that is the only divergence and it is a strict improvement.
 describe("errMessage — differential vs the replaced catch idioms", () => {
-  const idiomOr = (e: any) => e?.message || e; // embed / reranker / cost-log / daemon / http-server
+  const idiomOr = (e: any) => e?.message || e; // embed / reranker / daemon / http-server
   const idiomNul = (e: any) => e?.message ?? e; // depth-judge / intel digest
 
   it("Error (the realistic throw): byte-identical to every old idiom", () => {

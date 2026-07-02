@@ -81,6 +81,17 @@ npm run daemon:wake     # fire a single wake right now — to verify
 
 > Honest note: the author verified the engine + eval end-to-end; the full daemon wake loop (transport / model / scripts are now aligned) is yours to confirm once on your own machine with your token.
 
+## Running intel (digests + concern sweep · optional)
+
+The engine ships a third process, **intel** (`apps/gateway/src/intel.ts`) — on a cron it distills raw conversation into dialogue digests, and runs the daily concern `decay → sweep → derive` pass (the self-emotion scan). It is **not Claude-bound** (it uses your configured `KIMI_MODEL`, with optional `INTEL_MODEL` / `INTEL_DIGEST_MODEL` / `INTEL_SWEEP_MODEL` role overrides), so it is easier to run than the daemon:
+
+```bash
+cd apps/gateway
+npm run intel           # self-scheduling: daily runAll + hourly digest tick
+```
+
+Without it, memory stays searchable; you just get no automatic digests (the "recent conversation" layer that reentry injects) and no daily concern sweep. `extractFromChat` is the reference extractor — clone it and swap the data source to feed memory candidates from email / dreams / telegram / any source (those sources are deployment-specific, so only the generic chat version ships).
+
 ## Storage
 
 One `DATABASE_URL`, three ways to run it — same code, no extra backend:
@@ -131,9 +142,9 @@ These three names are a continuation of the author's canon. If you have words yo
 
 ## Tool reference (full MCP set)
 
-`registerAllTools` ships these 6 groups, 28 tools, called by the agent mid-conversation (the table above is `npm run` CLI commands — a different category).
+`registerAllTools` ships these 7 groups, 33 tools, called by the agent mid-conversation (the table above is `npm run` CLI commands — a different category).
 
-**Memory (7)**
+**Memory (8)**
 
 - `memory_search` — hybrid scoring: semantic (pgvector) + ILIKE substring (CJK-friendly) + pg_trgm fuzzy (Latin-friendly) + entity-mention edges, unified ranking with no short-circuit. `scope=full` widens to the observation/profile/RESTRICTED private pool; `rerank=true` runs a local cross-encoder (slower — for oblique / semantic / whole-picture recall).
 - `memory_search_safe` — non-sensitive retrieval for collaborating external agents: the server hard-locks `scope=default`, refuses RESTRICTED/SELF_SCORE, and runs each hit through a public-facing content predicate.
@@ -162,6 +173,10 @@ These three names are a continuation of the author's canon. If you have words yo
 - `private_read` — read the `private_*` restricted profile tier.
 - `register_read` / `register_set` — read / write speaking-style presets (register profiles).
 - `observation_write` — write one observation (a passive observation record).
+
+**Cross-device chat (4)**
+
+- `chat_write` / `chat_read` / `chat_threads` / `chat_delete` — the cross-device conversation timeline: idempotent writes (`dedupeKey` — a retried send does not duplicate the row), merged reads by `threadId`, a thread list, and delete-by-id (used by a front end's retry to drop the stale reply). Front-end wiring is in **[docs/EXTENSIONS.en.md](./docs/EXTENSIONS.en.md)**, chat section.
 
 **Session lifecycle (3)** — see the section above: `reentry` / `reentry_delta` / `closeout`.
 

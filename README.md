@@ -136,9 +136,9 @@ agent 在一段对话里按这三个 MCP 工具走完整个生命周期：
 
 ## 工具全集速查（MCP 工具）
 
-`registerAllTools` 默认挂这 6 组、共 28 个工具，agent 在对话里调（上面那张表是 `npm run` CLI 命令，两类不同）。
+`registerAllTools` 默认挂这 7 组、共 33 个工具，agent 在对话里调（上面那张表是 `npm run` CLI 命令，两类不同）。
 
-**记忆 · memory（7）**
+**记忆 · memory（8）**
 
 - `memory_search` —— 混合检索：语义(pgvector)+ ILIKE 子串(CJK 友好)+ pg_trgm 模糊(Latin 友好)+ entity-mention 边，统一排序不短路。`scope=full` 扩到 observation/profile/RESTRICTED 私池，`rerank=true` 走本地 cross-encoder 重排（更慢，给 oblique / 语义 / 全局回忆用）。
 - `memory_search_safe` —— 给协作的外部 agent 的非敏感检索：server 硬锁 `scope=default`、拒 RESTRICTED/SELF_SCORE、每条过一遍公开内容谓词。
@@ -167,6 +167,10 @@ agent 在一段对话里按这三个 MCP 工具走完整个生命周期：
 - `private_read` —— 读 `private_*` 受限画像层。
 - `register_read` / `register_set` —— 说话风格预设(register profile)读 / 写。
 - `observation_write` —— 写一条 observation（被动观察记录）。
+
+**跨设备对话 · chat（4）**
+
+- `chat_write` / `chat_read` / `chat_threads` / `chat_delete` —— 跨设备对话时间线：写入带 `dedupeKey` 幂等（重试不重复落行）、按 `threadId` 合并读取、线程列表、按 id 删除（retry 换掉旧回复用）。前端接法见 **[docs/EXTENSIONS.md](./docs/EXTENSIONS.md)** 的 chat 一节。
 
 **会话生命周期（3）** —— 详见上一节：`reentry` / `reentry_delta` / `closeout`。
 

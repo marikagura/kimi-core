@@ -8,6 +8,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Real Postgres so the DB-gated integration suite actually runs in CI —
+    # without it all *.integration.test.ts files skip (their guard requires a
+    # localhost DATABASE_URL) and the SQL core (retrieval CTE, derive/sweep,
+    # digest dedup, graph walk) is only ever verified on the author's machine.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: kimi
+          POSTGRES_PASSWORD: kimi
+          POSTGRES_DB: kimi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kimi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://kimi:kimi@localhost:5432/kimi?schema=public
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,6 +37,7 @@ jobs:
                            #   reliably completed for Linux's esbuild/tsx optional deps
                            #   (@emnapi/*), and npm install reconciles cross-platform.
       - run: npm run db:generate
+      - run: npm run db:migrate:deploy   # 0_init creates the vector/pg_trgm/pgcrypto extensions
       - run: npx tsc --noEmit
       - run: npm run lint   # eslint: no-floating-promises (error) + no-explicit-any (warn)
       - run: npm test

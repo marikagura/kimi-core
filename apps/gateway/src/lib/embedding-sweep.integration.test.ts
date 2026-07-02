@@ -6,8 +6,10 @@ import { sweepTable, SWEEP_TABLES } from "./embedding-sweep.js";
 // and runs the REAL production config through the extracted sweepTable, asserting
 // the embedding gets written. Exercises the needsSummary branch (memories selects
 // + embeds `summary`; observations / core_profile have no summary column). Needs a
-// real embed endpoint (EMBED_* in .env) + a local DB; skipped in CI (no DB/keys).
-const local = process.env.DATABASE_URL?.includes("localhost") ? describe : describe.skip;
+// real embed endpoint AND a local DB — gate on both (a CI Postgres service alone
+// must not un-skip this; embed.ts itself no-ops unless all three EMBED_* are set).
+const embedConfigured = !!(process.env.EMBED_MODEL && process.env.EMBED_BASE_URL && process.env.EMBED_API_KEY);
+const local = process.env.DATABASE_URL?.includes("localhost") && embedConfigured ? describe : describe.skip;
 
 async function hasEmbedding(table: string, id: string): Promise<boolean> {
   // table is a fixed config key, never user text — no injection surface. embedding

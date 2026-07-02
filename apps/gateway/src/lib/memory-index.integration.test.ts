@@ -10,8 +10,10 @@ import { indexNewMemory } from "./memory-index.js";
 // edge to a seeded entity, and a memory→memory similar edge to a seeded neighbour.
 // Tolerant by design (presence, not exact confidence) — the byte-exact old-vs-new
 // comparison lives in memory-index.differential.test.ts (deterministic). Needs a
-// real embed endpoint (EMBED_* in .env) + a local DB; skipped in CI.
-const local = process.env.DATABASE_URL?.includes("localhost") ? describe : describe.skip;
+// real embed endpoint AND a local DB — gate on both (a CI Postgres service alone
+// must not un-skip this; embed.ts itself no-ops unless all three EMBED_* are set).
+const embedConfigured = !!(process.env.EMBED_MODEL && process.env.EMBED_BASE_URL && process.env.EMBED_API_KEY);
+const local = process.env.DATABASE_URL?.includes("localhost") && embedConfigured ? describe : describe.skip;
 
 // embText already retries 429s internally; this guards the rarer null (transient
 // outage / saturation under the parallel test run) so the seeded neighbour is

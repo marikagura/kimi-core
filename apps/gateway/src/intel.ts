@@ -6,6 +6,7 @@ import prisma from "./db.js";
 import { localDate, localDateTime, DEFAULT_TZ } from "./time.js";
 import { embedAndStore } from "./lib/embed.js";
 import { sweepNullEmbeddings } from "./lib/embedding-sweep.js";
+import { sweepAllMissingSimilarity } from "./lib/memory-similarity.js";
 import { writeSessionScore } from "./lib/session-score.js";
 import { checkDataConcern } from "./lib/sleep-concern.js";
 import { deriveConcerns, deriveDrives, decayStaleConcerns, sweepConcerns } from "./lib/concern-derive.js";
@@ -549,6 +550,15 @@ async function runAll() {
     const r = await sweepNullEmbeddings();
     summary.push(`embedding_sweep: ${r.patched}/${r.attempted} patched`);
   } catch (e: unknown) { const m = errMessage(e); console.error("embedding_sweep err:", m); summary.push(`embedding_sweep: ERR ${m}`); }
+
+  // Similar-edge catch-up: closeout links only its own keyMemories, so memories
+  // written via memory_write or digest extraction never get `similar` edges —
+  // without this sweep the graph's similar class silently starves (the module's
+  // header promised a nightly sweep that was never scheduled until here).
+  try {
+    const r = await sweepAllMissingSimilarity();
+    summary.push(`similarity_sweep: ${r.edgesCreated} edges on ${r.memoriesPatched}/${r.scanned} scanned`);
+  } catch (e: unknown) { const m = errMessage(e); console.error("similarity_sweep err:", m); summary.push(`similarity_sweep: ERR ${m}`); }
 
   // Auto-expire PendingItem after 7 days: candidates nobody resolves accumulate
   // forever. Items still OPEN after 7 days → EXPIRED. Still visible in backstage,

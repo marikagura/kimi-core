@@ -9,8 +9,8 @@
 //   entirely — leaving 0 effective edges in DB. This sweep is the catch-up path
 //   that builds edges regardless of how a memory was created.
 //
-// Triggered nightly from the scheduler on memories without any outgoing
-// similar-edge. Idempotent — a memory that already has edges is skipped (we
+// Triggered from intel's daily runAll (sweepAllMissingSimilarity) on memories
+// without any outgoing similar-edge. Idempotent — a memory that already has edges is skipped (we
 // check existence before doing the cosine query).
 
 import prisma from "../db.js";

@@ -194,6 +194,10 @@ agent 在一段对话里按这三个 MCP 工具走完整个生命周期：
 - **`DO_NOTHING` 是平权的一个 action，不是兜底默认。** 唤醒后的 action selection 里，「这次不出声」和「发一条」同权——弃权本身就是能动性的一种表达，不是每次醒来都必须打扰你。完整论证见 **[docs/AUTONOMY.md](./docs/AUTONOMY.md) §2**。
 - **行为级验证 > 静态推断。** 自审 harness 用一组 agent 真去触发行为来查 leak / bug，而不是静态读代码推断「应该没问题」——因为静态推断会系统性 over-claim。见 **[docs/SELF-AUDIT.md](./docs/SELF-AUDIT.md)**。
 
+## 致谢
+
+整理窗的调度顺序（分诊 → 消化 → 聚类）参考了 [zziying/consolidation-draft](https://github.com/zziying/consolidation-draft) 公开的调度经验；未复用其代码或文字，仅致谢「反序会把聚类饿死」这一思路。
+
 ## License
 
 AGPL-3.0-or-later。

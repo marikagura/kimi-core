@@ -68,6 +68,8 @@ export type ScoredMemory = {
   summary: string | null;
   importance: number | null;
   memoryType: string;
+  digestTimeStart?: Date | null;
+  digestTimeEnd?: Date | null;
   via_entity: boolean;
   entity_names: string[] | null;
   sem: number;
@@ -276,6 +278,7 @@ export async function scoreMemories(
     SELECT m.id, m.title, m.content, m.summary, m.importance,
            m.valence, m.arousal, m.experiencer, m.resolution,
            m."topicId", m."memoryType", m."activationCount",
+           m."digestTimeStart", m."digestTimeEnd",
            CASE WHEN m.embedding IS NOT NULL THEN ${semExpr} ELSE 0 END AS sem_sim,
            GREATEST(
              CASE WHEN coalesce(m.title,   '') ILIKE ${qPattern} THEN ${ILIKE_TITLE} ELSE 0 END,

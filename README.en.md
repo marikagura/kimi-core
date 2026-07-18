@@ -198,6 +198,10 @@ The engine's knobs are all env-driven and default to safe (fail-closed / off):
 - **`DO_NOTHING` is a peer action, not a fallback default.** In post-wake action selection, "stay quiet this time" and "send one" rank as equals — abstaining is itself an expression of agency, not an obligation to interrupt you every wake. Full argument in **[docs/AUTONOMY.en.md](./docs/AUTONOMY.en.md) §2**.
 - **Behavioral verification > static inference.** The self-audit harness points a set of agents at the fork to *trigger behavior* and find leaks / bugs, rather than reading code statically and inferring "looks fine" — because static inference systematically over-claims. See **[docs/SELF-AUDIT.en.md](./docs/SELF-AUDIT.en.md)**.
 
+## Acknowledgments
+
+The consolidate pass order (triage → digest → cluster) follows a scheduling lesson published in [zziying/consolidation-draft](https://github.com/zziying/consolidation-draft); no code or prose is reused — only the idea that running the passes in reverse starves the clusters.
+
 ## License
 
 AGPL-3.0-or-later.

@@ -14,6 +14,7 @@ import { paperExtension } from "../extensions/paper/index.js";
 import { travelExtension } from "../extensions/travel/action.js";
 import { demoFeedExtension } from "../extensions/demo-feed/feed.js";
 import { weeklyArcExtension } from "../extensions/weekly-arc/index.js";
+import { consolidateExtension } from "../extensions/consolidate/index.js";
 
 const REGISTRY: Record<string, KimiExtension> = {
   store: storeExtension,
@@ -21,6 +22,7 @@ const REGISTRY: Record<string, KimiExtension> = {
   travel: travelExtension,
   "demo-feed": demoFeedExtension,
   "weekly-arc": weeklyArcExtension,
+  consolidate: consolidateExtension,
 };
 
 export function enabledExtensions(): KimiExtension[] {

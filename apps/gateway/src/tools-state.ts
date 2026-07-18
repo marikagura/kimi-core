@@ -123,7 +123,7 @@ export function registerStateTools(server: McpServer) {
 
   server.tool(
     "event_read",
-    "Read recent events. Filter by type and/or source, default last 24h.",
+    "Read recent events. Filter by type and/or source, default last 24h. Pass timeStart/timeEnd to switch to range mode (inclusive bounds, ascending) — pairs with a memory's ⟦src …⟧ pointer to pull back the original conversation window.",
     {
       eventType: z
         .enum(["CHAT", "APP_OPEN", "MANUAL_NOTE", "SYSTEM", "DREAM", "SCORE_FEEDBACK", "THOUGHT_HIT", "THOUGHT_RESOLVED"])
@@ -131,15 +131,33 @@ export function registerStateTools(server: McpServer) {
       source: z.string().optional().describe("Filter by source field (substring match)"),
       hoursBack: z.number().default(24),
       limit: z.number().default(30),
+      timeStart: z
+        .string()
+        .optional()
+        .describe("ISO. Passing either time switches to range mode: createdAt filtered to [timeStart, timeEnd] (inclusive) + sorted ascending (chronological replay) + overrides hoursBack. Pairs with a memory's ⟦src …⟧ pointer to pull the original conversation window back."),
+      timeEnd: z
+        .string()
+        .optional()
+        .describe("ISO. See timeStart. Passing only one side leaves that bound open."),
     },
-    async ({ eventType, source, hoursBack, limit }) => {
-      const since = new Date(Date.now() - hoursBack * 3600 * 1000);
-      const where: any = { createdAt: { gte: since } };
+    async ({ eventType, source, hoursBack, limit, timeStart, timeEnd }) => {
+      // Range mode (either timeStart/timeEnd given): inclusive createdAt filter +
+      // ascending order, overriding hoursBack. Default mode: last hoursBack hours,
+      // descending. limit applies in both.
+      const rangeMode = !!(timeStart || timeEnd);
+      const where: any = {};
+      if (rangeMode) {
+        where.createdAt = {};
+        if (timeStart) where.createdAt.gte = new Date(timeStart);
+        if (timeEnd) where.createdAt.lte = new Date(timeEnd);
+      } else {
+        where.createdAt = { gte: new Date(Date.now() - hoursBack * 3600 * 1000) };
+      }
       if (eventType) where.eventType = eventType;
       if (source) where.source = { contains: source, mode: "insensitive" };
       const events = await prisma.event.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: rangeMode ? "asc" : "desc" },
         take: limit,
       });
       if (!events.length) return { content: [{ type: "text", text: "No events." }] };

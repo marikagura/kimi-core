@@ -25,3 +25,13 @@ Or query the database directly (Postgres, `memories` table). The repo's own back
 The daily intel run emits a `curation:` line (active count, high-importance pool, open-concern count) and raises a flag when the high-importance pool crosses a threshold (`CURATION_REVIEW_THRESHOLD`, default 30). Wire it into your notifier, or just read the intel summary.
 
 The point: you don't have to remember to curate — the engine reminds you.
+
+## The consolidate pass (optional, weekly)
+
+The optional `consolidate` extension (`KIMI_EXTENSIONS=consolidate`) is a direct extension of this stance. Once a week it runs three read-only passes over the store — triage (unattached memories against active-topic centroids), a debt roll-call (a topic whose arc summary lags the links added after it), and cluster candidates (new lines forming in the unattached pool) — and writes the result as a single SYSTEM event: a review list. It computes candidates only; it never links, merges, or writes a memory. The next session reads the list and a human decides. The pass order is deliberate — triage → digest → cluster; running it in reverse starves the clusters.
+
+It defaults to Sunday 23:00 (`CONSOLIDATE_CRON`, after the weekly arc) and makes no LLM call; a manual `npm run consolidate` also works. The prefix filters (which titles are routine, which are a topic's arc) ship as neutral English placeholders — point them at your own title conventions via `CONSOLIDATE_ROUTINE_PREFIXES` / `CONSOLIDATE_ARC_PREFIXES` (see `config.example.yaml`).
+
+## Acknowledgments
+
+The consolidate pass order (triage → digest → cluster) follows a scheduling lesson published in [zziying/consolidation-draft](https://github.com/zziying/consolidation-draft); no code or prose is reused — only the idea that running the passes in reverse starves the clusters.

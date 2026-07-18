@@ -111,9 +111,25 @@ export function registerCloseoutTools(server: McpServer) {
       authorModel: z
         .string()
         .describe("Instrument attribution (required): the model id of the session calling closeout. The episode / self-score / keyMemories are all attributed to this instrument."),
+      digestTimeStart: z
+        .string()
+        .optional()
+        .describe("Provenance pointer: ISO start of this session's conversation window. Shared by the episode / self-score / keyMemory writes — the read side renders a ⟦src⟧ line and event_read timeStart/timeEnd can pull the original conversation back. With no precise range, pass one side or none; never pass a guessed value."),
+      digestTimeEnd: z
+        .string()
+        .optional()
+        .describe("Provenance pointer: ISO end of this session's conversation window. See digestTimeStart."),
     },
-    async ({ episodeTitle, episodeSummary, keyMemories, stateUpdates, pendingItems, keyObservations, selfScore, genuinelyRecalled, authorModel }) => {
+    async ({ episodeTitle, episodeSummary, keyMemories, stateUpdates, pendingItems, keyObservations, selfScore, genuinelyRecalled, authorModel, digestTimeStart, digestTimeEnd }) => {
       const results: string[] = [];
+      // Provenance pointer: this session's real conversation start/end, shared by
+      // the episode / self-score / keyMemory creates below. The read-side ⟦src⟧
+      // line + event_read timeStart/timeEnd pull the original conversation back.
+      // A missing side is spread away → default null (never an Invalid Date).
+      const digestSpan = {
+        ...(digestTimeStart ? { digestTimeStart: new Date(digestTimeStart) } : {}),
+        ...(digestTimeEnd ? { digestTimeEnd: new Date(digestTimeEnd) } : {}),
+      };
 
       const episode = await prisma.memory.create({
         data: {
@@ -124,6 +140,7 @@ export function registerCloseoutTools(server: McpServer) {
           importance: 4,
           sourceType: "CHAT",
           authorModel,
+          ...digestSpan,
         },
       });
       // closeout previously bypassed memory_write's post-write pipeline — the
@@ -164,6 +181,7 @@ export function registerCloseoutTools(server: McpServer) {
             importance: 3,
             sourceType: "CHAT",
             authorModel,
+            ...digestSpan,
           },
         });
         results.push(`Self-score: v=${selfScore.valence} a=${selfScore.arousal}${ssKey ? ` [concern ${ssKey}]` : ""} "${selfScore.note}"`);
@@ -189,6 +207,7 @@ export function registerCloseoutTools(server: McpServer) {
               valence: mem.valence ?? null,
               bondClosure: mem.bondClosure ?? false,
               authorModel,
+              ...digestSpan,
             },
           });
           savedMemoryIds.push({ id: created.id, title: created.title, summary: mem.summary });

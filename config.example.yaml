@@ -178,3 +178,30 @@ delivery:
   #   http → GET SEARCH_API_URL?{SEARCH_QUERY_PARAM=q}=<query> (+ Bearer SEARCH_API_KEY);
   #   map the response via SEARCH_RESULTS_PATH (default "results") + SEARCH_FIELD_TITLE/_URL/_SNIPPET.
   searchProvider: "none"
+
+# ---------- consolidate (optional weekly curation pass, OFF by default) ----------
+# The consolidate extension (KIMI_EXTENSIONS=consolidate) runs three passes once a
+# week and writes ONE SYSTEM event (source=consolidate) as a review list — the
+# engine only computes candidates, the write decision stays with the human (see
+# docs/CURATION.md). Every knob below is an in-code default overridable via the env
+# var named per line; this block documents them, it is not loaded. The prefix lists
+# are neutral English placeholders — no private vocabulary is baked in; a deployment
+# points them at its own title conventions.
+consolidate:
+  cron: "0 23 * * 0"            # → CONSOLIDATE_CRON; Sunday 23:00 (after weekly-arc). Unset → manual `npm run consolidate` only.
+  # Routine title prefixes excluded from triage + clustering (the "summary-fragment
+  # noise" layer: diaries, arcs, self-scores, session digests, …).
+  routineTitlePrefixes:        # → CONSOLIDATE_ROUTINE_PREFIXES (JSON array)
+    ["diary ", "weekly arc", "weekly review", "self-score ", "[chat", "[intimate", "excursion "]
+  # Title prefixes identifying a topic's narrative-arc memory (pass 2, dirtyTopics).
+  # The shipped weekly arc is not topic-anchored, so this pass stays inert until a
+  # deployment adopts a topic-anchored arc convention.
+  arcTitlePrefixes:            # → CONSOLIDATE_ARC_PREFIXES (JSON array)
+    ["arc ", "weekly arc"]
+  poolMinImportance: 3         # → CONSOLIDATE_POOL_MIN_IMPORTANCE; pool importance floor
+  triageCos: 0.70              # → CONSOLIDATE_TRIAGE_COS; pass 1 attach-suggestion cosine
+  clusterEdge: 0.60            # → CONSOLIDATE_CLUSTER_EDGE; pass 3 connected-component edge
+  clusterMin: 3                # → CONSOLIDATE_CLUSTER_MIN; min members to be a cluster
+  clusterMax: 8                # → CONSOLIDATE_CLUSTER_MAX; max members shown per cluster
+  dirtyNewer: 2                # → CONSOLIDATE_DIRTY_NEWER; min new links to flag a topic
+  dirtyOldestDays: 7           # → CONSOLIDATE_DIRTY_OLDEST_DAYS; or oldest debt older than this (days)

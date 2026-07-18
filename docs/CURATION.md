@@ -25,3 +25,13 @@
 每日 intel run 会输出一行 `curation:`（active 总数、高 importance 池、open concern 数），并在高 importance 池超过阈值（`CURATION_REVIEW_THRESHOLD`，默认 30）时打 flag。把它接到你的 notifier，或直接读 intel summary。
 
 重点：你不用记着 curate——引擎会提醒你。
+
+## 整理窗（可选的每周 pass）
+
+可选的 `consolidate` 扩展（`KIMI_EXTENSIONS=consolidate`）是这一立场的直接延伸。每周一次，它对记忆库跑三个只读 pass——分诊（无主记忆对活跃 topic 质心）、欠账点名（某个 topic 的卷摘要落后于其后新挂的链）、聚类候选（无主池里正在成形的新线）——把结果写成一条 SYSTEM event：一份整理清单。它只算候选，从不挂链、合并或写入记忆。下一个会话读这份清单，由人来决定。pass 顺序有意为之：分诊 → 消化 → 聚类；反序会把聚类饿死。
+
+调度默认周日 23:00（`CONSOLIDATE_CRON`，在每周 arc 之后），且不做任何 LLM 调用；也可手动 `npm run consolidate`。前缀过滤（哪些是例行层、哪些是 topic 卷）是中性英文占位，用 `CONSOLIDATE_ROUTINE_PREFIXES` / `CONSOLIDATE_ARC_PREFIXES` 指向你自己的标题约定，见 `config.example.yaml`。
+
+## 致谢
+
+整理窗的调度顺序（分诊 → 消化 → 聚类）参考了 [zziying/consolidation-draft](https://github.com/zziying/consolidation-draft) 公开的调度经验；未复用其代码或文字，仅致谢「反序会把聚类饿死」这一思路。

@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import prisma from "./db.js";
-import { localDate } from "./time.js";
+import { localDate, srcSpan } from "./time.js";
 import { indexNewMemory } from "./lib/memory-index.js";
 import { clearEmbedding } from "./lib/embed.js";
 import { scoreMemories } from "./lib/retrieval.js";
@@ -56,6 +56,22 @@ export function registerMemoryTools(server: McpServer) {
         .string()
         .optional()
         .describe("Instrument attribution: the caller's own model id. SELF-type memories (SELF_SCORE / diary / experiencer=SELF) must pass it so the score view can tell which instrument logged the score."),
+      digestTimeStart: z
+        .string()
+        .optional()
+        .describe("Provenance pointer: ISO start of the source conversation window. A session writing memories should pass this pair (the conversation's real start/end, known within the window) — the read side renders a ⟦src⟧ line and event_read timeStart/timeEnd can pull the original conversation back. With no precise range, pass one side or none; never pass a guessed value."),
+      digestTimeEnd: z
+        .string()
+        .optional()
+        .describe("Provenance pointer: ISO end of the source conversation window. See digestTimeStart."),
+      eventIdStart: z
+        .string()
+        .optional()
+        .describe("Provenance pointer: explicit start event id when known (digest-loop case). Hand-written calls normally use the digestTimeStart/End timestamps instead and leave this unset."),
+      eventIdEnd: z
+        .string()
+        .optional()
+        .describe("Provenance pointer: explicit end event id when known. See eventIdStart."),
     },
     async ({
       title,
@@ -74,6 +90,10 @@ export function registerMemoryTools(server: McpServer) {
       concernKey,
       validFrom,
       authorModel,
+      digestTimeStart,
+      digestTimeEnd,
+      eventIdStart,
+      eventIdEnd,
     }) => {
       // authorModel guard: SELF-type memories (SELF_SCORE / experiencer=SELF)
       // must be attributed, otherwise the score view can't tell which
@@ -135,6 +155,15 @@ export function registerMemoryTools(server: McpServer) {
           ...(validFrom ? { validFrom: new Date(validFrom) } : {}),
           // Instrument attribution: which model wrote this.
           authorModel,
+          // Provenance pointers: the digest loop passes explicit event ids;
+          // hand-written calls pass the conversation's start/end times. The
+          // read-side ⟦src⟧ line + event_read timeStart/timeEnd pull the original
+          // conversation back. Undefined id → default null; the digest times use
+          // spread so an unset side stays null (never an Invalid Date).
+          eventIdStart,
+          eventIdEnd,
+          ...(digestTimeStart ? { digestTimeStart: new Date(digestTimeStart) } : {}),
+          ...(digestTimeEnd ? { digestTimeEnd: new Date(digestTimeEnd) } : {}),
         },
         select: { id: true, title: true },
       });
@@ -255,7 +284,8 @@ export function registerMemoryTools(server: McpServer) {
           const via = m.via_entity
             ? ` via ${(m.entities && m.entities.length ? m.entities : ["?"]).join(",")}`
             : "";
-          return `[${m.memoryType}] ${m.title} (imp:${m.importance}, score:${m.final.toFixed(2)} sem:${m.sem.toFixed(2)} kw:${m.kw.toFixed(2)} time:${time} imp:${imp}${via})\n${body(m)}`;
+          const src = m.digestTimeStart ? `\n${srcSpan(m.digestTimeStart, m.digestTimeEnd)}` : "";
+          return `[${m.memoryType}] ${m.title} (imp:${m.importance}, score:${m.final.toFixed(2)} sem:${m.sem.toFixed(2)} kw:${m.kw.toFixed(2)} time:${time} imp:${imp}${via})\n${body(m)}${src}`;
         })
         .join("\n\n---\n\n");
       return { content: [{ type: "text", text }] };
@@ -355,7 +385,7 @@ export function registerMemoryTools(server: McpServer) {
         ? memories
             .map(
               (m) =>
-                `[${m.memoryType}] ${m.title} (importance: ${m.importance}, ${localDate(m.createdAt)})\n${body(m)}`,
+                `[${m.memoryType}] ${m.title} (importance: ${m.importance}, ${localDate(m.createdAt)})\n${body(m)}${m.digestTimeStart ? `\n${srcSpan(m.digestTimeStart, m.digestTimeEnd)}` : ""}`,
             )
             .join("\n\n---\n\n")
         : "No memories found.";

@@ -1,3 +1,4 @@
+> **Please read the Chinese version first.**
 > This is an AI-written English rendering of [ARCHITECTURE.md](./ARCHITECTURE.md),
 > for readers who don't read Chinese. The Chinese is canonical — it is the
 > author's own voice. This English is a purely AI voice: the AI's own reading of
